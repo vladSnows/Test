@@ -1,0 +1,474 @@
+
+import streamlit as st
+import pandas as pd
+from OraConnector import *
+
+st.set_page_config(
+    page_title="Błędy przetwarzań DMSF",
+    page_icon="⚠️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Report a bug': 'mailto:huta@mbank.pl?subject=DMSF%20%E2%80%93%20nieprawid%C5%82owe%20dzia%C5%82anie%20aplikacji%20Streamlit',
+        'About': "Raport błędów - DMSF"
+    }
+)
+
+st.title("Błędy przetwarzań")
+
+if "connector" not in st.session_state:
+    st.session_state.connector = None
+if "connected" not in st.session_state:
+    st.session_state.connected = False
+
+connection_DMSF = get_dmsf_cml_connection()
+
+query = """
+SELECT *
+FROM (
+SELECT
+T_BATCH_ID as "Batch ID",
+T_PROCESS_NAME as "Process Name",
+T_PROCESS_EXEC_ID as "Process Execution ID",
+TABLE_NAME as "Table Name",
+WORKFLOW_NAME as "Workflow Name",
+MAPPING_NAME as "Mapping Name",
+ERROR_TIMESTAMP as "Error Timestamp",
+ERROR_MSG as "Error message"
+FROM DEV03_DMSF_CML.MT_PROCESSING_ERROR
+WHERE
+SUBSTR(T_BATCH_ID,1,8) = REPLACE(TO_CHAR(:processing_date), '-' )
+AND (:workflow_name IS NULL OR WORKFLOW_NAME = :workflow_name)
+ORDER BY ERROR_TIMESTAMP DESC)
+OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY
+"""
+
+@st.cache_data
+def get_workflow_names():
+    name_query = "SELECT DISTINCT WORKFLOW_NAME FROM DEV03_DMSF_CML.MT_PROCESSING_ERROR ORDER BY WORKFLOW_NAME"
+    return pd.read_sql(name_query, connection_DMSF)["WORKFLOW_NAME"].tolist()
+
+workflow_names = get_workflow_names()
+
+col0, col1, col2, col3 = st.columns([1.5, 1, 3, 3])
+
+with col0:
+    workflow_name = st.selectbox("**Workflow Name**", [""] + workflow_names)
+
+with col1:
+    processing_date = st.date_input("**Processing/Error Date**", value=None)
+
+if "errors_last_filters" not in st.session_state or not isinstance(st.session_state.errors_last_filters, dict):
+    st.session_state.errors_last_filters = {}
+
+for key in ["workflow_name", "processing_date"]:
+    if key not in st.session_state.errors_last_filters:
+        st.session_state.errors_last_filters[key] = None
+
+filters_changed = (
+    st.session_state.errors_last_filters["workflow_name"] != workflow_name or
+    st.session_state.errors_last_filters["processing_date"] != processing_date
+)
+
+if filters_changed:
+    st.session_state.errors_offset = 0
+    st.session_state.errors_data_cache = pd.DataFrame()
+    st.session_state.errors_initial_load_done = False
+    st.session_state.errors_last_filters["workflow_name"] = workflow_name
+    st.session_state.errors_last_filters["processing_date"] = processing_date
+
+if "errors_offset" not in st.session_state:
+    st.session_state.errors_offset = 0
+if "errors_limit" not in st.session_state:
+    st.session_state.errors_limit = 20
+if "errors_data_cache" not in st.session_state:
+    st.session_state.errors_data_cache = pd.DataFrame()
+if "errors_initial_load_done" not in st.session_state:
+    st.session_state.errors_initial_load_done = False
+
+params_dict = {
+    "workflow_name": workflow_name if workflow_name else None,
+    "processing_date": processing_date if processing_date else None
+}
+
+offset = st.session_state.errors_offset
+limit = st.session_state.errors_limit
+
+paginated_query = query.format(offset=offset, limit=limit)
+
+@st.cache_data
+def get_total_count(_connection, params):
+    count_query = """
+    SELECT COUNT(*) FROM DEV03_DMSF_CML.MT_PROCESSING_ERROR
+    WHERE SUBSTR(T_BATCH_ID,1,8) = REPLACE(TO_CHAR(:processing_date), '-' )
+    AND (:workflow_name IS NULL OR WORKFLOW_NAME = :workflow_name)
+    """
+    with _connection.cursor() as cursor:
+        cursor.execute(count_query, params)
+        return cursor.fetchone()[0]
+
+if "errors_total_count" not in st.session_state or filters_changed:
+    st.session_state.errors_total_count = get_total_count(connection_DMSF, params_dict)
+
+@st.cache_data
+def execute_dynamic_query(_connection, query, params):
+    with _connection.cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        return pd.DataFrame(rows, columns=columns)
+
+if not st.session_state.errors_initial_load_done or filters_changed:
+    paginated_query = query.format(
+        offset=st.session_state.errors_offset,
+        limit=st.session_state.errors_limit
+    )
+    new_data = execute_dynamic_query(connection_DMSF, paginated_query, params_dict)
+    st.session_state.errors_data_cache = new_data
+    st.session_state.errors_offset = st.session_state.errors_limit
+    st.session_state.errors_initial_load_done = True
+
+st.dataframe(st.session_state.errors_data_cache, use_container_width=True)
+
+st.markdown(f"**Showing {len(st.session_state.errors_data_cache)} of {st.session_state.errors_total_count} records**")
+
+if len(st.session_state.errors_data_cache) < st.session_state.errors_total_count:
+    if st.button("Pokaż więcej"):
+        paginated_query = query.format(
+            offset=st.session_state.errors_offset,
+            limit=st.session_state.errors_limit
+        )
+        new_data = execute_dynamic_query(connection_DMSF, paginated_query, params_dict)
+        st.session_state.errors_data_cache = pd.concat([st.session_state.errors_data_cache, new_data], ignore_index=True)
+        st.session_state.errors_offset += st.session_state.errors_limit
+        st.rerun()
+else:
+    st.info("All records loaded.")
+
+st.markdown(
+    """
+    <style>
+    .stDataFrame > div {
+        height: 55vh !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+
+
+
+
+
+import streamlit as st
+import pandas as pd
+from OraConnector import *
+
+
+st.set_page_config(
+    page_title="Status przetwarzań DMSF",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Report a bug': 'mailto:huta@mbank.pl?subject=DMSF%20%E2%80%93%20nieprawid%C5%82owe%20dzia%C5%82anie%20aplikacji%20Streamlit',
+        'About': "Raport statusu przetwarzań DMSF"
+    }
+)
+st.title("Przetwarzania DMSF")
+
+# Initialize connection
+if "connector" not in st.session_state:
+    st.session_state.connector = None
+if "connected" not in st.session_state:
+    st.session_state.connected = False
+
+# Get DB connection
+connection_DMSF = get_dmsf_cml_connection()
+
+# Query template
+query = """
+       SELECT *
+        FROM (
+        SELECT
+        PROCESSING_NAME AS "PROCESSING NAME",
+        BATCH_ID AS "BATCH ID",
+        PROCESSING_DATE AS "PROCESSING DATE",
+        PROCESSING_STATE AS "PROCESSING STATE",
+        PRC_PERIOD_FLAG AS "PRC PERIOD FLAG",
+        PROCESSING_MODE AS "PROCESSING MODE",
+        SCHEDULING_DATE AS "SCHEDULING_DATE"
+    FROM DEV03_DMSF_CML.MT_PROCESSING_STATE
+    WHERE
+            (:processing_name IS NULL OR PROCESSING_NAME = :processing_name)
+        AND (:processing_date IS NULL OR PROCESSING_DATE = :processing_date)
+    ORDER BY PROCESSING_DATE DESC)
+    OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY
+"""
+
+# Fetch distinct processing names for dropdown
+@st.cache_data
+def get_processing_names():
+    name_query = "SELECT DISTINCT PROCESSING_NAME FROM DEV03_DMSF_CML.MT_PROCESSING_STATE ORDER BY PROCESSING_NAME"
+    return pd.read_sql(name_query, connection_DMSF)["PROCESSING_NAME"].tolist()
+
+processing_names = get_processing_names()
+
+# Active filters
+col0, col1, col2, col3 = st.columns([1.5, 1, 3, 3])
+
+with col0:
+    processing_name = st.selectbox("**Processing Name**", [""] + processing_names)
+
+with col1:
+    processing_date = st.date_input("**Processing Date**", value=None)
+
+
+# Reset danych jeśli zmieniono filtr
+
+if "home_last_filters" not in st.session_state or not isinstance(st.session_state.home_last_filters, dict):
+    st.session_state.home_last_filters = {}
+
+# Upewnij się, że wszystkie klucze istnieją
+for key in ["processing_name", "processing_date"]:
+    if key not in st.session_state.home_last_filters:
+        st.session_state.home_last_filters[key] = None
+
+
+filters_changed = (
+    st.session_state.home_last_filters["processing_name"] != processing_name or
+    st.session_state.home_last_filters["processing_date"] != processing_date
+)
+
+if filters_changed:
+    st.session_state.home_offset = 0
+    st.session_state.home_data_cache = pd.DataFrame()
+    st.session_state.home_initial_load_done = False
+    st.session_state.home_last_filters["processing_name"] = processing_name
+    st.session_state.home_last_filters["processing_date"] = processing_date
+
+# Stan sesji
+if "home_offset" not in st.session_state:
+    st.session_state.home_offset = 0
+if "home_limit" not in st.session_state:
+    st.session_state.home_limit = 20
+if "home_data_cache" not in st.session_state:
+    st.session_state.home_data_cache = pd.DataFrame()
+if "home_initial_load_done" not in st.session_state:
+    st.session_state.home_initial_load_done = False
+
+
+params_dict = {
+    "processing_name": processing_name if processing_name else None,
+    "processing_date": processing_date if processing_date else None
+}
+
+
+offset = st.session_state.home_offset
+limit = st.session_state.home_limit
+
+paginated_query = query.replace(":offset", str(offset)).replace(":limit", str(limit))
+
+@st.cache_data
+def get_total_count(_connection, params):
+    count_query = """
+        SELECT COUNT(*) FROM DEV03_DMSF_CML.MT_PROCESSING_STATE
+        WHERE (:processing_name IS NULL OR PROCESSING_NAME = :processing_name)
+        AND (:processing_date IS NULL OR PROCESSING_DATE = :processing_date)
+    """
+    with _connection.cursor() as cursor:
+        cursor.execute(count_query, params)
+        return cursor.fetchone()[0]
+
+if "home_total_count" not in st.session_state or filters_changed:
+    st.session_state.home_total_count = get_total_count(connection_DMSF, params_dict)
+
+# Execute query and show table
+@st.cache_data
+def execute_dynamic_query(_connection, query, params):
+    with _connection.cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        return pd.DataFrame(rows, columns=columns)
+
+# Automatyczne pierwsze ładowanie
+if not st.session_state.home_initial_load_done or filters_changed:
+    paginated_query = query.format(
+        offset=st.session_state.home_offset,
+        limit=st.session_state.home_limit
+    )
+    new_data = execute_dynamic_query(connection_DMSF, paginated_query, params_dict)
+    st.session_state.home_data_cache = new_data
+    st.session_state.home_offset = st.session_state.home_limit
+    st.session_state.home_initial_load_done = True
+
+
+# Wyświetlenie danych
+st.dataframe(st.session_state.home_data_cache, use_container_width=True)
+
+
+st.markdown(f"**Showing {len(st.session_state.home_data_cache)} of {st.session_state.home_total_count} records**")
+
+# Przycisk ładowania
+
+if len(st.session_state.home_data_cache) < st.session_state.home_total_count:
+    if st.button("Pokaż więcej"):
+        paginated_query = query.format(
+            offset=st.session_state.home_offset,
+            limit=st.session_state.home_limit
+        )
+        new_data = execute_dynamic_query(connection_DMSF, paginated_query, params_dict)
+        st.session_state.home_data_cache = pd.concat([st.session_state.home_data_cache, new_data], ignore_index=True)
+        st.session_state.home_offset += st.session_state.home_limit
+        st.rerun()
+else:
+    st.info("All records loaded.")
+
+
+
+
+
+st.markdown(
+    """
+    <style>
+    .stDataFrame > div {
+        height: 55vh !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+
+
+
+
+
+import streamlit as st
+
+
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+def login():
+    if st.button("Log in"):
+        st.session_state.logged_in = True
+        st.rerun()
+
+def logout():
+    if st.button("Log out"):
+        st.session_state.logged_in = False
+        st.rerun()
+
+login_page = st.Page(login, title="Log in", icon=":material/login:")
+logout_page = st.Page(logout, title="Log out", icon=":material/logout:")
+
+pages = [
+    st.Page(
+        "pages/1_homqqe.py",
+        title="Przetwarzania DMSF",
+        icon=":material/monitor_heart:"
+    ),
+    st.Page(
+        "pages/errors.py",
+        title="Błędy przetwarzań",
+        icon=":material/error:"
+    ),
+    st.Page(
+        "pages/logs.py",
+        title="LOGi Data Quality",
+        icon=":material/analytics:"
+    )
+]
+
+if st.session_state.logged_in:
+    pg = st.navigation(
+        {
+            "🏠 Account": [logout_page],
+            "📊 DMSF Reports": pages
+        }
+    )
+else:
+    pg = st.navigation([login_page])
+
+pg.run()
+
+
+st.markdown(
+    """
+    <style>
+    .sidebar-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        padding: 10px;
+        text-align: center;
+        font-size: 0.9em;
+        color: gray;
+    }
+    </style>
+    <div class="sidebar-footer">
+        Made with ❤️ from HUTA
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import streamlit as st
+import oracledb
+import os
+
+DSN = """
+  (DESCRIPTION =
+    (ADDRESS = (PROTOCOL = TCP)(HOST = exa2-scan.mbank.pl)(PORT = 1521))
+    (CONNECT_DATA =
+      (SERVER = DEDICATED)
+      (SERVICE_NAME = FINREP_DEV_UI)
+    )
+  )"""
+
+USER = "UI_ZEW_2_33905[DEV03_DMSF_CML]"
+PASS_ENV_VAR = "DBPASS"
+
+@st.cache_resource
+def get_dmsf_cml_connection():
+    password = os.getenv(PASS_ENV_VAR)
+    if not password:
+        st.error(f"Environment variable '{PASS_ENV_VAR}' is not set.")
+        return None
+    return oracledb.connect(
+        user=USER,
+        password=password,
+        dsn=DSN
+    )
+
+# # Example usage in Streamlit
+# st.title("Oracle DB Connection Test")
+#
+# conn = get_dmsf_cml_connection()
+# if conn:
+#     st.success("Connected to Oracle DB successfully!")
+# else:
+#     st.warning("Failed to connect to Oracle DB.")
