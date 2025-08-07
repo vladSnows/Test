@@ -1,0 +1,22 @@
+import pandas as pd
+
+def get_processing_names(connection):
+    query = "SELECT DISTINCT PROCESSING_NAME FROM DEV03_DMSF_CML.MT_PROCESSING_STATE ORDER BY PROCESSING_NAME"
+    return pd.read_sql(query, connection)["PROCESSING_NAME"].tolist()
+
+def get_total_count(connection, params):
+    query = """
+        SELECT COUNT(*) FROM DEV03_DMSF_CML.MT_PROCESSING_STATE
+        WHERE (:processing_name IS NULL OR PROCESSING_NAME = :processing_name)
+        AND (:processing_date IS NULL OR PROCESSING_DATE = :processing_date)
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(query, params)
+        return cursor.fetchone()[0]
+
+def execute_dynamic_query(connection, query, params):
+    with connection.cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        return pd.DataFrame(rows, columns=columns)
