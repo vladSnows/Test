@@ -1,0 +1,132 @@
+import oracledb
+import time
+import streamlit as st
+import pandas as pd
+from sqlalchemy import create_engine, text
+from st_aggrid import AgGrid, GridOptionsBuilder
+
+
+# Konfiguracja połączenia z Oracle
+def get_engine():
+    st.session_state.dbusername = "UI_ZEW_2_37697[DEV01_FATCRS]"
+    dsn = '(DESCRIPTION = (ADDRESS = (PROTOCOL = TCP)(HOST = exa2-scan.mbank.pl)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = FATCRS_DEV_UI)))'
+    connection_string = f"oracle+oracledb://{st.session_state.dbusername}:{st.session_state.password}@{dsn}"
+    return create_engine(connection_string, pool_size=10, max_overflow=20, pool_timeout=30)
+
+
+# Pobieranie unikalnych wartości do filtrów
+@st.cache_data(show_spinner="Pobieranie wartości filtrów...")
+def get_filter_values():
+    engine = get_engine()
+    with engine.connect() as conn:
+        clainter_values = pd.read_sql("SELECT DISTINCT CLAINTER FROM L_ALT_PEDT008 FETCH FIRST 1000 ROWS ONLY", conn)["clainter"].dropna().unique().tolist()
+        owner_values = pd.read_sql("SELECT DISTINCT FIRST_OWNER FROM L_ALT_PEDT008 FETCH FIRST 1000 ROWS ONLY", conn)["first_owner"].dropna().unique().tolist()
+        count_records = pd.read_sql("SELECT COUNT(*) as cnt FROM L_ALT_PEDT008", conn)
+    return clainter_values, owner_values, count_records
+
+# Pobieranie danych z Oracle z filtrami i paginacją
+@st.cache_data(show_spinner="Pobieranie danych z bazy...")
+def load_data_with_pd(clainter_filter=None, owner_filter=None, offset=0, limit=50):
+    start_time = time.time()
+    engine = get_engine()
+    base_query = "SELECT * FROM L_ALT_PEDT008"
+    where_clauses = []
+    if clainter_filter:
+        where_clauses.append(f"CLAINTER = '{clainter_filter}'")
+    if owner_filter:
+        where_clauses.append(f"FIRST_OWNER = '{owner_filter}'")
+    if where_clauses:
+        base_query += " WHERE " + " AND ".join(where_clauses)
+    base_query += f" OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY"
+
+    with engine.connect() as conn:
+        df = pd.read_sql(text(base_query), conn)
+
+
+    result_df = df
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+
+    return result_df, elapsed_time
+
+# Interfejs użytkownika
+st.title("DebuG")
+st.session_state.password = st.text_input("Enter database password:", type="password")
+
+if st.session_state.password != '':
+  # Pobieranie wartości do filtrów
+  clainter_values, owner_values, count_records = get_filter_values()
+
+  # Interfejs filtrów
+  selected_clainter = st.selectbox("Filtruj po CLAINTER:", [""] + clainter_values)
+  selected_owner = st.selectbox("Filtruj po FIRST_OWNER:", [""] + owner_values)
+
+  # Paginacja
+  page = st.number_input("Numer strony", min_value=1, value=1)
+  limit = 4500
+  offset = (page - 1) * limit
+
+  # Pobieranie i wyświetlanie danych
+  try:
+      df, elapsed_time = load_data_with_pd(
+          clainter_filter=selected_clainter if selected_clainter else None,
+          owner_filter=selected_owner if selected_owner else None,
+          offset=offset,
+          limit=limit
+      )
+      st.toast(f"Czas ładowania danych: {elapsed_time:.2f} sekundy")
+
+      # Konfiguracja grida
+      gb = GridOptionsBuilder.from_dataframe(df)
+      gb.configure_default_column(
+          filter=True,              # Włącza filtrowanie kolumn
+          sortable=True,            # Włącza sortowanie
+          groupable=True,           # Pozwala na grupowanie danych
+          resizable=True,           # Pozwala na zmianę szerokości kolumn
+          wrapText=True,            # Zawijanie tekstu w komórkach
+          autoHeight=True,          # Automatyczna wysokość wierszy
+          enableRowGroup=True,      # Pozwala na grupowanie wierszy
+          enablePivot=True,         # Pozwala na pivotowanie danych
+          enableValue=True,         # Pozwala na agregację wartości
+          headerCheckboxSelection=True,  # Checkbox w nagłówku do zaznaczenia wszystkich
+      )
+
+      gb.configure_grid_options(
+          pagination=True,                   # Włącza paginację
+          paginationAutoPageSize=False,     # Automatyczny rozmiar strony
+          # paginationPageSize=20,            # Liczba wierszy na stronę
+          domLayout='normal',               # Układ DOM: 'normal', 'autoHeight', 'print'
+          suppressRowClickSelection=False,  # Czy kliknięcie w wiersz zaznacza go
+          rowSelection='single',            # 'single' lub 'multiple'
+          enableRangeSelection=True,        # Zaznaczanie zakresów
+          suppressAggFuncInHeader=False,     # Ukrywa funkcje agregujące w nagłówkach
+          animateRows=True,                 # Animacja przy zmianach danych
+          defaultColDef={                   # Domyślne ustawienia kolumn
+              "resizable": True,
+              "sortable": True,
+              "filter": True
+          },
+          groupSelectsChildren=True,        # Zaznaczenie grupy zaznacza dzieci
+          suppressRowDeselection=False,     # Czy można odznaczyć wiersz
+          suppressCellSelection=False,      # Czy można zaznaczać komórki
+          suppressHorizontalScroll=False    # Czy ukryć poziomy scroll
+      )
+
+      gb.configure_column(
+          "clainter",
+          header_name="clainter",
+          filter="agTextColumnFilter",
+          cellStyle={"color": "red"},
+          wrapText=True,
+          enableRowGroup=True
+      )
+      # SideBar zwiniety
+      gb.configure_side_bar()
+      # Budowanie opcji
+      grid_options = gb.build()
+      AgGrid(df, gridOptions=grid_options, enable_enterprise_modules=True, theme="streamlit", update_mode="NO_UPDATE", pagination=True, height=400)
+      total_count = int(count_records["cnt"].iloc[0])
+      st.info(f"Całkowita liczba rekordów w tabeli: {total_count:,}")
+
+  except Exception as e:
+      st.error(f"Wystąpił błąd: {e}")
