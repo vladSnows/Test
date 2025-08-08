@@ -121,8 +121,12 @@ if not st.session_state.errors_initial_load_done or filters_changed:
     st.session_state.errors_offset = st.session_state.errors_limit
     st.session_state.errors_initial_load_done = True
 
-st.dataframe(st.session_state.errors_data_cache, use_container_width=True)
-st.markdown(f"**Showing {len(st.session_state.errors_data_cache)} of {st.session_state.errors_total_count} records**")
+# Wyświetlenie danych
+if st.session_state.errors_data_cache is not None and not st.session_state.errors_data_cache.empty and len(st.session_state.errors_data_cache.columns) > 0:
+    st.dataframe(st.session_state.errors_data_cache, use_container_width=True)
+    st.markdown(f"**Showing {len(st.session_state.errors_data_cache)} of {st.session_state.errors_total_count} records**")
+else:
+    st.info("No data to display for the selected filters.")
 
 if len(st.session_state.errors_data_cache) < st.session_state.errors_total_count:
     if st.button("Pokaż więcej"):

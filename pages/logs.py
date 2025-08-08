@@ -128,8 +128,11 @@ if not st.session_state.logs_initial_load_done or filters_changed:
     st.session_state.logs_initial_load_done = True
 
 # Show data
-st.dataframe(st.session_state.logs_data_cache, use_container_width=True)
-st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
+if st.session_state.logs_data_cache is not None and not st.session_state.logs_data_cache.empty and len(st.session_state.logs_data_cache.columns) > 0:
+    st.dataframe(st.session_state.logs_data_cache, use_container_width=True)
+    st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
+else:
+    st.info("No data to display for the selected filters.")
 
 # Load more button
 if len(st.session_state.logs_data_cache) < st.session_state.logs_total_count:

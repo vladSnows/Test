@@ -116,9 +116,11 @@ if not st.session_state.home_initial_load_done or filters_changed:
     st.session_state.home_initial_load_done = True
 
 # Wyświetlenie danych
-st.dataframe(st.session_state.home_data_cache, use_container_width=True)
-
-st.markdown(f"**Showing {len(st.session_state.home_data_cache)} of {st.session_state.home_total_count} records**")
+if st.session_state.home_data_cache is not None and not st.session_state.home_data_cache.empty and len(st.session_state.home_data_cache.columns) > 0:
+    st.dataframe(st.session_state.home_data_cache, use_container_width=True)
+    st.markdown(f"**Showing {len(st.session_state.home_data_cache)} of {st.session_state.home_total_count} records**")
+else:
+    st.info("No data to display for the selected filters.")
 
 # Przycisk ładowania
 if len(st.session_state.home_data_cache) < st.session_state.home_total_count:
