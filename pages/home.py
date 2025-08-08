@@ -39,18 +39,18 @@ for key, default_value in st.session_state.home_last_filters.items():
         if key == 'processing_names':
             st.session_state.home_last_filters[key] = get_unique_column_values(session, MtProcessingState.processing_name)
 
+# Always use the full set of unique values for selectbox options
+processing_name_options = [v for v in st.session_state.home_last_filters['processing_names'] if v is not None]
 col0, col1 = st.columns([1.5, 1])
-
 with col0:
-    processing_name_options = [v for v in st.session_state.home_last_filters['processing_names'] if v is not None]
     processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(processing_name_options), key='PROCESSING_NAME')
 with col1:
     processing_date = st.date_input("**Processing Date**", value=None)
 
 filters = []
-if processing_name:
+if processing_name is not None:
     filters.append(MtProcessingState.processing_name == processing_name)
-if processing_date:
+if processing_date is not None:
     filters.append(MtProcessingState.processing_date == processing_date)
 
 # Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)

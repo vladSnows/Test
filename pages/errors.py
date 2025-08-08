@@ -39,18 +39,18 @@ for key, default_value in st.session_state.errors_last_filters.items():
         if key == 'workflow_name':
             st.session_state.errors_last_filters[key] = get_unique_column_values(session, MtProcessingError.workflow_name)
 
+# Always use the full set of unique values for selectbox options
+workflow_name_options = [v for v in st.session_state.errors_last_filters['workflow_name'] if v is not None]
 col0, col1 = st.columns([1.5, 1])
-
 with col0:
-    workflow_name_options = [v for v in st.session_state.errors_last_filters['workflow_name'] if v is not None]
     workflow_name = st.selectbox("**Workflow Name**", options=[None] + sorted(workflow_name_options), key='WORKFLOW_NAME')
 with col1:
     processing_date = st.date_input("**Processing/Error Date**", value=None)
 
 filters = []
-if workflow_name:
+if workflow_name is not None:
     filters.append(MtProcessingError.workflow_name == workflow_name)
-if processing_date:
+if processing_date is not None:
     filters.append(MtProcessingError.error_timestamp.cast(pd.Timestamp).date() == processing_date)
 
 # Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)

@@ -44,22 +44,26 @@ for key, default_value in st.session_state.logs_last_filters.items():
         if key == 'process_name':
             st.session_state.logs_last_filters[key] = get_unique_column_values(session, EvRkProcDqApex.t_process_name)
 
+# Always use the full set of unique values for selectbox options
+batch_id_options = [v for v in st.session_state.logs_last_filters['batch_id'] if v is not None]
+dq_code_options = [v for v in st.session_state.logs_last_filters['dq_code'] if v is not None]
+process_name_options = [v for v in st.session_state.logs_last_filters['process_name'] if v is not None]
+
 col0, col1, col2 = st.columns([1, 0.5, 1.5])
 
 with col0:
-    batch_id = st.selectbox("**Batch ID**", options=[None] + sorted(st.session_state.logs_last_filters['batch_id']), key='BATCH_ID')
+    batch_id = st.selectbox("**Batch ID**", options=[None] + sorted(batch_id_options), key='BATCH_ID')
 with col1:
-    dq_code_options = [v for v in st.session_state.logs_last_filters['dq_code'] if v is not None]
     dq_code = st.selectbox("**DQ Code**", options=[None] + sorted(dq_code_options), key='DQ_CODE')
 with col2:
-    process_name = st.selectbox("**Process Name**", options=[None] + sorted(st.session_state.logs_last_filters['process_name']), key='PROCESS_NAME')
+    process_name = st.selectbox("**Process Name**", options=[None] + sorted(process_name_options), key='PROCESS_NAME')
 
 filters = []
-if batch_id:
+if batch_id is not None:
     filters.append(EvRkProcDqApex.t_batch_id == batch_id)
-if dq_code:
+if dq_code is not None:
     filters.append(EvRkProcDqApex.dq_code == dq_code)
-if process_name:
+if process_name is not None:
     filters.append(EvRkProcDqApex.t_process_name == process_name)
 
 # Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
