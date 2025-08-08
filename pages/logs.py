@@ -95,6 +95,12 @@ if dq_code not in (None, ""):
 if process_name not in (None, ""):
     filters.append(EvRkProcDqApex.t_process_name == process_name)
 
+# Ensure all three filters can be set independently
+# Fix: Always update all three filter values in session state, even if unchanged
+st.session_state.logs_last_filters["batch_id"] = batch_id
+st.session_state.logs_last_filters["dq_code"] = dq_code
+st.session_state.logs_last_filters["process_name"] = process_name
+
 from db.generic_utils import logs_query
 
 # Get total count
