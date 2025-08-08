@@ -52,6 +52,10 @@ if processing_name:
 if processing_date:
     filters.append(MtProcessingState.processing_date == processing_date)
 
+# Ensure filters is always a list
+if not isinstance(filters, (list, tuple)):
+    filters = [filters]
+
 for key in ["processing_name", "processing_date"]:
     if key not in st.session_state.home_last_filters:
         st.session_state.home_last_filters[key] = None

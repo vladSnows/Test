@@ -61,6 +61,10 @@ if dq_code:
 if process_name:
     filters.append(EvRkProcDqApex.t_process_name == process_name)
 
+# Ensure filters is always a list
+if not isinstance(filters, (list, tuple)):
+    filters = [filters]
+
 for key in ["batch_id", "dq_code", "process_name"]:
     if key not in st.session_state.logs_last_filters:
         st.session_state.logs_last_filters[key] = None

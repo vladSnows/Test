@@ -80,6 +80,10 @@ if "errors_initial_load_done" not in st.session_state:
 offset = st.session_state.errors_offset
 limit = st.session_state.errors_limit
 
+# Ensure filters is always a list
+if not isinstance(filters, (list, tuple)):
+    filters = [filters]
+
 if "errors_total_count" not in st.session_state or filters_changed:
     st.session_state.errors_total_count = get_total_count_orm(
         session,
