@@ -3,9 +3,10 @@ import pandas as pd
 from utils import helper as u
 from sqlalchemy.orm import sessionmaker
 from db.models import EvRkProcDqApex
-from db.generic_utils import get_unique_column_values, get_paginated_data, logs_query, get_total_count_orm
+from db.generic_utils import get_unique_column_values, get_paginated_data, get_total_count_orm
 
 st.title("LOGi Data Quality")
+
 
 # Initialize connection
 if "connector" not in st.session_state:
@@ -17,76 +18,44 @@ if "connected" not in st.session_state:
 engine = u.getEngine()
 Session = sessionmaker(bind=engine)
 session = Session()
+connection_DMSF = engine.raw_connection()
 
-if 'isInitialOpen_LOGS' not in st.session_state:
-    st.session_state['isInitialOpen_LOGS'] = True
-else:
-    st.session_state['isInitialOpen_LOGS'] = False
+# Fetch distinct values for dropdowns using SQLAlchemy utilities
+batch_ids = get_unique_column_values(session, EvRkProcDqApex.t_batch_id)
+dq_codes = get_unique_column_values(session, EvRkProcDqApex.dq_code)
+process_names = get_unique_column_values(session, EvRkProcDqApex.t_process_name)
 
-if st.session_state.get('isInitialOpen_LOGS', True):
-    session_defaults = {
-        'logs_last_filters': {
-            'batch_id': None,
-            'dq_code': None,
-            'process_name': None
-        }
-    }
-    for key, val in session_defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = val
-
-for key, default_value in st.session_state.logs_last_filters.items():
-    if key not in st.session_state.logs_last_filters or st.session_state.logs_last_filters[key] is None:
-        if key == 'batch_id':
-            st.session_state.logs_last_filters[key] = get_unique_column_values(session, EvRkProcDqApex.t_batch_id)
-        if key == 'dq_code':
-            values = get_unique_column_values(session, EvRkProcDqApex.dq_code)
-            st.session_state.logs_last_filters[key] = [str(v) for v in values] if values else []
-        if key == 'process_name':
-            st.session_state.logs_last_filters[key] = get_unique_column_values(session, EvRkProcDqApex.t_process_name)
-
-# Always use the full set of unique values for selectbox options
-batch_id_options = [v for v in st.session_state.logs_last_filters['batch_id'] if v is not None]
-dq_code_options = [v for v in st.session_state.logs_last_filters['dq_code'] if v is not None]
-process_name_options = [v for v in st.session_state.logs_last_filters['process_name'] if v is not None]
-
-col0, col1, col2 = st.columns([1, 0.5, 1.5])
+# Active filters
+col0, col1, col2, col3 = st.columns([1, 0.5, 1.5, 3])
 
 with col0:
-    batch_id = st.selectbox("**Batch ID**", options=[None] + sorted(batch_id_options), key='selected_batch_id')
+    batch_id = st.selectbox("**Batch ID**", [""] + batch_ids)
 with col1:
-    dq_code = st.selectbox("**DQ Code**", options=[None] + sorted(dq_code_options), key='selected_dq_code')
+    dq_code = st.selectbox("**DQ Code**", [""] + [int(code) if code is not None and str(code).isdigit() else code for code in dq_codes])
 with col2:
-    process_name = st.selectbox("**Process Name**", options=[None] + sorted(process_name_options), key='selected_process_name')
+    process_name = st.selectbox("**Process Name**", [""] + process_names)
 
-filters = []
-if st.session_state.get('selected_batch_id') is not None:
-    filters.append(EvRkProcDqApex.t_batch_id == st.session_state['selected_batch_id'])
-if st.session_state.get('selected_dq_code') is not None:
-    filters.append(EvRkProcDqApex.dq_code == st.session_state['selected_dq_code'])
-if st.session_state.get('selected_process_name') is not None:
-    filters.append(EvRkProcDqApex.t_process_name == st.session_state['selected_process_name'])
+# Reset filters if changed
+if "logs_last_filters" not in st.session_state or not isinstance(st.session_state.logs_last_filters, dict):
+    st.session_state.logs_last_filters = {}
 
-# Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
-filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or hasattr(f, 'left')]
-
-# Ensure filters is always a list
-if not isinstance(filters, (list, tuple)):
-    filters = [filters]
+for key in ["batch_id", "dq_code", "process_name"]:
+    if key not in st.session_state.logs_last_filters:
+        st.session_state.logs_last_filters[key] = None
 
 filters_changed = (
-    st.session_state.logs_last_filters.get("batch_id") != st.session_state.get('selected_batch_id') or
-    str(st.session_state.logs_last_filters.get("dq_code")) != str(st.session_state.get('selected_dq_code')) or
-    st.session_state.logs_last_filters.get("process_name") != st.session_state.get('selected_process_name')
+    st.session_state.logs_last_filters["batch_id"] != batch_id or
+    st.session_state.logs_last_filters["dq_code"] != dq_code or
+    st.session_state.logs_last_filters["process_name"] != process_name
 )
 
 if filters_changed:
     st.session_state.logs_offset = 0
     st.session_state.logs_data_cache = pd.DataFrame()
     st.session_state.logs_initial_load_done = False
-    st.session_state.logs_last_filters["batch_id"] = st.session_state.get('selected_batch_id')
-    st.session_state.logs_last_filters["dq_code"] = st.session_state.get('selected_dq_code')
-    st.session_state.logs_last_filters["process_name"] = st.session_state.get('selected_process_name')
+    st.session_state.logs_last_filters["batch_id"] = batch_id
+    st.session_state.logs_last_filters["dq_code"] = dq_code
+    st.session_state.logs_last_filters["process_name"] = process_name
 
 if "logs_offset" not in st.session_state:
     st.session_state.logs_offset = 0
@@ -97,8 +66,23 @@ if "logs_data_cache" not in st.session_state:
 if "logs_initial_load_done" not in st.session_state:
     st.session_state.logs_initial_load_done = False
 
+params_dict = {
+    "batch_id": batch_id if batch_id else None,
+    "dq_code": dq_code if dq_code else None,
+    "process_name": process_name if process_name else None
+}
+
 offset = st.session_state.logs_offset
 limit = st.session_state.logs_limit
+
+# Replace raw SQL count with SQLAlchemy ORM count
+filters = []
+if batch_id:
+    filters.append(EvRkProcDqApex.t_batch_id == batch_id)
+if dq_code:
+    filters.append(EvRkProcDqApex.dq_code == str(dq_code))
+if process_name:
+    filters.append(EvRkProcDqApex.t_process_name == process_name)
 
 if "logs_total_count" not in st.session_state or filters_changed:
     st.session_state.logs_total_count = get_total_count_orm(
@@ -107,42 +91,47 @@ if "logs_total_count" not in st.session_state or filters_changed:
         filters
     )
 
+# Use SQLAlchemy for paginated data
 if not st.session_state.logs_initial_load_done or filters_changed:
     results = get_paginated_data(
         session,
-        logs_query(session),
+        session.query(EvRkProcDqApex),
         filters,
-        offset,
-        limit,
+        st.session_state.logs_offset,
+        st.session_state.logs_limit,
         order_by=EvRkProcDqApex.processing_date,
         desc=True
     )
-    new_data = pd.DataFrame([r._asdict() for r in results])
+    new_data = pd.DataFrame([r.__dict__ for r in results])
+    if '_sa_instance_state' in new_data.columns:
+        new_data = new_data.drop('_sa_instance_state', axis=1)
     st.session_state.logs_data_cache = new_data
     st.session_state.logs_offset = st.session_state.logs_limit
     st.session_state.logs_initial_load_done = True
 
 st.dataframe(st.session_state.logs_data_cache, use_container_width=True)
+
 st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
 
 if len(st.session_state.logs_data_cache) < st.session_state.logs_total_count:
     if st.button("Pokaż więcej"):
         results = get_paginated_data(
             session,
-            logs_query(session),
+            session.query(EvRkProcDqApex),
             filters,
-            offset,
-            limit,
+            st.session_state.logs_offset,
+            st.session_state.logs_limit,
             order_by=EvRkProcDqApex.processing_date,
             desc=True
         )
-        new_data = pd.DataFrame([r._asdict() for r in results])
+        new_data = pd.DataFrame([r.__dict__ for r in results])
+        if '_sa_instance_state' in new_data.columns:
+            new_data = new_data.drop('_sa_instance_state', axis=1)
         st.session_state.logs_data_cache = pd.concat([st.session_state.logs_data_cache, new_data], ignore_index=True)
         st.session_state.logs_offset += st.session_state.logs_limit
         st.rerun()
 else:
     st.info("All records loaded.")
-
 st.markdown(
     """
     <style>
