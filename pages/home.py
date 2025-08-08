@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from utils import helper as u
 from sqlalchemy.orm import sessionmaker
+from db.models import MtProcessingState
 from db.generic_utils import get_unique_column_values, get_paginated_data, get_total_count_orm, home_query
 
 st.title("Przetwarzania DMSF")
@@ -37,7 +38,7 @@ if st.session_state.get('isInitialOpen_HOME', True):
 for key, default_value in st.session_state.home_last_filters.items():
     if key not in st.session_state.home_last_filters or st.session_state.home_last_filters[key] is None:
         if key == 'processing_names':
-            st.session_state.home_last_filters[key] = get_unique_column_values(session, home_query(session)._entities[0].column)
+            st.session_state.home_last_filters[key] = get_unique_column_values(session, MtProcessingState.processing_name)
 
 # Active filters
 col0, col1, col2, col3 = st.columns([1.5, 1, 3, 3])
@@ -50,10 +51,8 @@ with col1:
 
 filters = []
 if processing_name:
-    from db.models import MtProcessingState
     filters.append(MtProcessingState.processing_name == processing_name)
 if processing_date:
-    from db.models import MtProcessingState
     filters.append(MtProcessingState.processing_date == processing_date)
 
 # Reset danych jeśli zmieniono filtr
