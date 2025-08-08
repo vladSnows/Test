@@ -1,87 +1,125 @@
 import streamlit as st
 import pandas as pd
-from utils.db import get_dmsf_cml_connection, get_processing_names, get_total_count, get_paginated_processing_state
-from utils.session import get_session_state, init_session_vars
-from components.footer import render_footer
-from components.header import render_header
-from core.config import APP_TITLE, AUTH_USERS
-
-"""
-Page: Przetwarzania DMSF
-Displays DMSF processing status records.
-"""
+from utils import helper as u
+from sqlalchemy.orm import sessionmaker
+from db.models import MtProcessingState
+from db.generic_utils import get_unique_column_values, get_total_count_orm, get_paginated_data, home_query
 
 st.title("Przetwarzania DMSF")
-session = get_session_state()
 
-# Use cached DB connection
-connection_DMSF = get_dmsf_cml_connection()
-if connection_DMSF is None:
-    st.error("Could not connect to the database. Please check your credentials and connection settings.")
-    st.stop()
+# Initialize connection
+if "connector" not in st.session_state:
+    st.session_state.connector = None
+if "connected" not in st.session_state:
+    st.session_state.connected = False
 
-# Initialize session variables
-init_session_vars({
-    "home_last_filters": {},
-    "home_offset": 0,
-    "home_limit": 20,
-    "home_data_cache": pd.DataFrame(),
-    "home_initial_load_done": False
-})
+# Get DB connection
+engine = u.getEngine()
+Session = sessionmaker(bind=engine)
+session = Session()
 
-with st.spinner("Loading processing names..."):
-    processing_names = get_processing_names(connection_DMSF, "DEV03_DMSF_CML")
+if 'isInitialOpen_HOME' not in st.session_state:
+    st.session_state['isInitialOpen_HOME'] = True
+else:
+    st.session_state['isInitialOpen_HOME'] = False
 
-processing_names = get_processing_names()
+if st.session_state.get('isInitialOpen_HOME', True):
+    session_defaults = {
+        'home_last_filters': {
+            'processing_names': None,
+            'processing_date': None
+        }
+    }
+    for key, val in session_defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
 
-col0, col1, col2 = st.columns([2, 2, 2])
+for key, default_value in st.session_state.home_last_filters.items():
+    if key not in st.session_state.home_last_filters or st.session_state.home_last_filters[key] is None:
+        if key == 'processing_names':
+            st.session_state.home_last_filters[key] = get_unique_column_values(session, MtProcessingState.processing_name)
+
+col0, col1 = st.columns([1.5, 1])
 
 with col0:
-    processing_name = st.selectbox("**Processing Name**", [""] + processing_names)
-
+    processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(st.session_state.home_last_filters['processing_names']), key='PROCESSING_NAME')
 with col1:
     processing_date = st.date_input("**Processing Date**", value=None)
 
+filters = []
+if processing_name:
+    filters.append(MtProcessingState.processing_name == processing_name)
+if processing_date:
+    filters.append(MtProcessingState.processing_date == processing_date)
+
 for key in ["processing_name", "processing_date"]:
-    if key not in session.home_last_filters:
-        session.home_last_filters[key] = None
+    if key not in st.session_state.home_last_filters:
+        st.session_state.home_last_filters[key] = None
 
 filters_changed = (
-    session.home_last_filters["processing_name"] != processing_name or
-    session.home_last_filters["processing_date"] != processing_date
+    st.session_state.home_last_filters["processing_name"] != processing_name or
+    st.session_state.home_last_filters["processing_date"] != processing_date
 )
 
 if filters_changed:
-    session.home_offset = 0
-    session.home_data_cache = pd.DataFrame()
-    session.home_initial_load_done = False
-    session.home_last_filters["processing_name"] = processing_name
-    session.home_last_filters["processing_date"] = processing_date
+    st.session_state.home_offset = 0
+    st.session_state.home_data_cache = pd.DataFrame()
+    st.session_state.home_initial_load_done = False
+    st.session_state.home_last_filters["processing_name"] = processing_name
+    st.session_state.home_last_filters["processing_date"] = processing_date
 
-offset = session.home_offset
-limit = session.home_limit
+if "home_offset" not in st.session_state:
+    st.session_state.home_offset = 0
+if "home_limit" not in st.session_state:
+    st.session_state.home_limit = 20
+if "home_data_cache" not in st.session_state:
+    st.session_state.home_data_cache = pd.DataFrame()
+if "home_initial_load_done" not in st.session_state:
+    st.session_state.home_initial_load_done = False
 
-if "home_total_count" not in session or filters_changed:
-    session.home_total_count = get_total_count(connection_DMSF, params_dict, "DEV03_DMSF_CML")
+offset = st.session_state.home_offset
+limit = st.session_state.home_limit
 
-if not session.home_initial_load_done or filters_changed:
-    with st.spinner("Loading data..."):
-        new_data = get_paginated_processing_state(connection_DMSF, params_dict, session.home_offset, session.home_limit, "DEV03_DMSF_CML")
-        session.home_data_cache = new_data
-        session.home_offset = session.home_limit
-        session.home_initial_load_done = True
+if "home_total_count" not in st.session_state or filters_changed:
+    st.session_state.home_total_count = get_total_count_orm(
+        session,
+        MtProcessingState,
+        filters
+    )
 
-st.dataframe(session.home_data_cache, use_container_width=True)
+if not st.session_state.home_initial_load_done or filters_changed:
+    results = get_paginated_data(
+        session,
+        home_query(session),
+        filters,
+        offset,
+        limit,
+        order_by=MtProcessingState.processing_date,
+        desc=True
+    )
+    new_data = pd.DataFrame([r._asdict() for r in results])
+    st.session_state.home_data_cache = new_data
+    st.session_state.home_offset = st.session_state.home_limit
+    st.session_state.home_initial_load_done = True
 
-st.markdown(f"**Showing {len(session.home_data_cache)} of {session.home_total_count} records**")
+st.dataframe(st.session_state.home_data_cache, use_container_width=True)
+st.markdown(f"**Showing {len(st.session_state.home_data_cache)} of {st.session_state.home_total_count} records**")
 
-if len(session.home_data_cache) < session.home_total_count:
+if len(st.session_state.home_data_cache) < st.session_state.home_total_count:
     if st.button("Pokaż więcej"):
-        with st.spinner("Loading more data..."):
-            new_data = get_paginated_processing_state(connection_DMSF, params_dict, session.home_offset, session.home_limit, "DEV03_DMSF_CML")
-            session.home_data_cache = pd.concat([session.home_data_cache, new_data], ignore_index=True)
-            session.home_offset += session.home_limit
-            st.rerun()
+        results = get_paginated_data(
+            session,
+            home_query(session),
+            filters,
+            offset,
+            limit,
+            order_by=MtProcessingState.processing_date,
+            desc=True
+        )
+        new_data = pd.DataFrame([r._asdict() for r in results])
+        st.session_state.home_data_cache = pd.concat([st.session_state.home_data_cache, new_data], ignore_index=True)
+        st.session_state.home_offset += st.session_state.home_limit
+        st.rerun()
 else:
     st.info("All records loaded.")
 
@@ -95,5 +133,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-render_footer()

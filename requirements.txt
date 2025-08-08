@@ -1,5 +1,0 @@
-streamlit
-cx_Oracle
-pandas
-logging
-

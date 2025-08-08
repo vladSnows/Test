@@ -1,60 +1,72 @@
 import streamlit as st
 import pandas as pd
-from utils.db import get_dmsf_cml_connection, get_workflow_names, get_total_count, get_paginated_processing_error
-from utils.session import get_session_state, init_session_vars
-from components.footer import render_footer
-from components.header import render_header
-from core.config import APP_TITLE, AUTH_USERS
-
-"""
-Page: Błędy przetwarzań
-Displays error records from DMSF processing.
-"""
+from utils import helper as u
+from sqlalchemy.orm import sessionmaker
+from db.models import MtProcessingError
+from db.generic_utils import get_unique_column_values, get_paginated_data, errors_query, get_total_count_orm
 
 st.title("Błędy przetwarzań")
-session = get_session_state()
 
-# Initialize DB connection
-connection_DMSF = get_dmsf_cml_connection()
-if connection_DMSF is None:
-    st.error("Could not connect to the database. Please check your credentials and connection settings.")
-    st.stop()
+# Initialize connection
+if "connector" not in st.session_state:
+    st.session_state.connector = None
+if "connected" not in st.session_state:
+    st.session_state.connected = False
 
-with st.spinner("Loading workflow names..."):
-    workflow_names = get_workflow_names(connection_DMSF, "DEV03_DMSF_CML")
+# Get DB connection
+engine = u.getEngine()
+Session = sessionmaker(bind=engine)
+session = Session()
 
-col0, col1, col2, col3 = st.columns([1.5, 1, 3, 3])
+if 'isInitialOpen_ERRORS' not in st.session_state:
+    st.session_state['isInitialOpen_ERRORS'] = True
+else:
+    st.session_state['isInitialOpen_ERRORS'] = False
+
+if st.session_state.get('isInitialOpen_ERRORS', True):
+    session_defaults = {
+        'errors_last_filters': {
+            'workflow_name': None,
+            'processing_date': None
+        }
+    }
+    for key, val in session_defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
+
+for key, default_value in st.session_state.errors_last_filters.items():
+    if key not in st.session_state.errors_last_filters or st.session_state.errors_last_filters[key] is None:
+        if key == 'workflow_name':
+            st.session_state.errors_last_filters[key] = get_unique_column_values(session, MtProcessingError.workflow_name)
+
+col0, col1 = st.columns([1.5, 1])
 
 with col0:
-    workflow_name = st.selectbox("**Workflow Name**", [""] + workflow_names)
-
+    workflow_name = st.selectbox("**Workflow Name**", options=[None] + sorted(st.session_state.errors_last_filters['workflow_name']), key='WORKFLOW_NAME')
 with col1:
     processing_date = st.date_input("**Processing/Error Date**", value=None)
 
-# Initialize session variables
-init_session_vars({
-    "errors_last_filters": {},
-    "errors_offset": 0,
-    "errors_limit": 20,
-    "errors_data_cache": pd.DataFrame(),
-    "errors_initial_load_done": False
-})
+filters = []
+if workflow_name:
+    filters.append(MtProcessingError.workflow_name == workflow_name)
+if processing_date:
+    filters.append(MtProcessingError.error_timestamp.cast(pd.Timestamp).date() == processing_date)
 
 for key in ["workflow_name", "processing_date"]:
-    if key not in session.errors_last_filters:
-        session.errors_last_filters[key] = None
+    if key not in st.session_state.errors_last_filters:
+        st.session_state.errors_last_filters[key] = None
 
 filters_changed = (
-    session.errors_last_filters["workflow_name"] != workflow_name or
-    session.errors_last_filters["processing_date"] != processing_date
+    st.session_state.errors_last_filters["workflow_name"] != workflow_name or
+    st.session_state.errors_last_filters["processing_date"] != processing_date
 )
 
 if filters_changed:
-    session.errors_offset = 0
-    session.errors_data_cache = pd.DataFrame()
-    session.errors_initial_load_done = False
-    session.errors_last_filters["workflow_name"] = workflow_name
-    session.errors_last_filters["processing_date"] = processing_date
+    st.session_state.errors_offset = 0
+    st.session_state.errors_data_cache = pd.DataFrame()
+    st.session_state.errors_initial_load_done = False
+    st.session_state.errors_last_filters["workflow_name"] = workflow_name
+    st.session_state.errors_last_filters["processing_date"] = processing_date
 
 if "errors_offset" not in st.session_state:
     st.session_state.errors_offset = 0
@@ -65,35 +77,49 @@ if "errors_data_cache" not in st.session_state:
 if "errors_initial_load_done" not in st.session_state:
     st.session_state.errors_initial_load_done = False
 
-params_dict = {
-    "workflow_name": workflow_name if workflow_name else None,
-    "processing_date": processing_date if processing_date else None
-}
-
 offset = st.session_state.errors_offset
 limit = st.session_state.errors_limit
 
 if "errors_total_count" not in st.session_state or filters_changed:
-    st.session_state.errors_total_count = get_total_count(connection_DMSF, params_dict, "DEV03_DMSF_CML")
+    st.session_state.errors_total_count = get_total_count_orm(
+        session,
+        MtProcessingError,
+        filters
+    )
 
 if not st.session_state.errors_initial_load_done or filters_changed:
-    with st.spinner("Loading error data..."):
-        new_data = get_paginated_processing_error(connection_DMSF, params_dict, st.session_state.errors_offset, st.session_state.errors_limit, "DEV03_DMSF_CML")
-        st.session_state.errors_data_cache = new_data
-        st.session_state.errors_offset = st.session_state.errors_limit
-        st.session_state.errors_initial_load_done = True
+    results = get_paginated_data(
+        session,
+        errors_query(session),
+        filters,
+        offset,
+        limit,
+        order_by=MtProcessingError.error_timestamp,
+        desc=True
+    )
+    new_data = pd.DataFrame([r._asdict() for r in results])
+    st.session_state.errors_data_cache = new_data
+    st.session_state.errors_offset = st.session_state.errors_limit
+    st.session_state.errors_initial_load_done = True
 
 st.dataframe(st.session_state.errors_data_cache, use_container_width=True)
-
 st.markdown(f"**Showing {len(st.session_state.errors_data_cache)} of {st.session_state.errors_total_count} records**")
 
 if len(st.session_state.errors_data_cache) < st.session_state.errors_total_count:
     if st.button("Pokaż więcej"):
-        with st.spinner("Loading more error data..."):
-            new_data = get_paginated_processing_error(connection_DMSF, params_dict, st.session_state.errors_offset, st.session_state.errors_limit, "DEV03_DMSF_CML")
-            st.session_state.errors_data_cache = pd.concat([st.session_state.errors_data_cache, new_data], ignore_index=True)
-            st.session_state.errors_offset += st.session_state.errors_limit
-            st.rerun()
+        results = get_paginated_data(
+            session,
+            errors_query(session),
+            filters,
+            offset,
+            limit,
+            order_by=MtProcessingError.error_timestamp,
+            desc=True
+        )
+        new_data = pd.DataFrame([r._asdict() for r in results])
+        st.session_state.errors_data_cache = pd.concat([st.session_state.errors_data_cache, new_data], ignore_index=True)
+        st.session_state.errors_offset += st.session_state.errors_limit
+        st.rerun()
 else:
     st.info("All records loaded.")
 
@@ -107,5 +133,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-render_footer()
