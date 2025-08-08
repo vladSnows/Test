@@ -4,6 +4,7 @@ from utils import helper as u
 from sqlalchemy.orm import sessionmaker
 from db.models import MtProcessingError
 from db.generic_utils import get_unique_column_values, get_paginated_data, errors_query, get_total_count_orm
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.title("Błędy przetwarzań")
 
@@ -123,7 +124,41 @@ if not st.session_state.errors_initial_load_done or filters_changed:
 
 # Wyświetlenie danych
 if st.session_state.errors_data_cache is not None and not st.session_state.errors_data_cache.empty and len(st.session_state.errors_data_cache.columns) > 0:
-    st.dataframe(st.session_state.errors_data_cache, use_container_width=True)
+    gb = GridOptionsBuilder.from_dataframe(st.session_state.errors_data_cache)
+    gb.configure_default_column(
+        filter=True,
+        sortable=True,
+        groupable=True,
+        resizable=True,
+        wrapText=True,
+        autoHeight=True,
+        enableRowGroup=True,
+        enablePivot=True,
+        enableValue=True,
+        headerCheckboxSelection=True,
+    )
+    gb.configure_grid_options(
+        pagination=True,
+        paginationAutoPageSize=False,
+        domLayout='normal',
+        suppressRowClickSelection=False,
+        rowSelection='single',
+        enableRangeSelection=True,
+        suppressAggFuncInHeader=False,
+        animateRows=True,
+        defaultColDef={
+            "resizable": True,
+            "sortable": True,
+            "filter": True
+        },
+        groupSelectsChildren=True,
+        suppressRowDeselection=False,
+        suppressCellSelection=False,
+        suppressHorizontalScroll=False
+    )
+    gb.configure_side_bar()
+    grid_options = gb.build()
+    AgGrid(st.session_state.errors_data_cache, gridOptions=grid_options, enable_enterprise_modules=True, theme="streamlit", update_mode="NO_UPDATE", pagination=True, height=400)
     st.markdown(f"**Showing {len(st.session_state.errors_data_cache)} of {st.session_state.errors_total_count} records**")
 else:
     st.info("No data to display for the selected filters.")
