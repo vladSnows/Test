@@ -52,19 +52,19 @@ process_name_options = [v for v in st.session_state.logs_last_filters['process_n
 col0, col1, col2 = st.columns([1, 0.5, 1.5])
 
 with col0:
-    batch_id = st.selectbox("**Batch ID**", options=[None] + sorted(batch_id_options), key='BATCH_ID')
+    batch_id = st.selectbox("**Batch ID**", options=[None] + sorted(batch_id_options), key='selected_batch_id')
 with col1:
-    dq_code = st.selectbox("**DQ Code**", options=[None] + sorted(dq_code_options), key='DQ_CODE')
+    dq_code = st.selectbox("**DQ Code**", options=[None] + sorted(dq_code_options), key='selected_dq_code')
 with col2:
-    process_name = st.selectbox("**Process Name**", options=[None] + sorted(process_name_options), key='PROCESS_NAME')
+    process_name = st.selectbox("**Process Name**", options=[None] + sorted(process_name_options), key='selected_process_name')
 
 filters = []
-if batch_id is not None:
-    filters.append(EvRkProcDqApex.t_batch_id == batch_id)
-if dq_code is not None:
-    filters.append(EvRkProcDqApex.dq_code == dq_code)
-if process_name is not None:
-    filters.append(EvRkProcDqApex.t_process_name == process_name)
+if st.session_state.get('selected_batch_id') is not None:
+    filters.append(EvRkProcDqApex.t_batch_id == st.session_state['selected_batch_id'])
+if st.session_state.get('selected_dq_code') is not None:
+    filters.append(EvRkProcDqApex.dq_code == st.session_state['selected_dq_code'])
+if st.session_state.get('selected_process_name') is not None:
+    filters.append(EvRkProcDqApex.t_process_name == st.session_state['selected_process_name'])
 
 # Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
 filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or hasattr(f, 'left')]
@@ -73,23 +73,19 @@ filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or h
 if not isinstance(filters, (list, tuple)):
     filters = [filters]
 
-for key in ["batch_id", "dq_code", "process_name"]:
-    if key not in st.session_state.logs_last_filters:
-        st.session_state.logs_last_filters[key] = None
-
 filters_changed = (
-    st.session_state.logs_last_filters["batch_id"] != batch_id or
-    st.session_state.logs_last_filters["dq_code"] != dq_code or
-    st.session_state.logs_last_filters["process_name"] != process_name
+    st.session_state.logs_last_filters.get("batch_id") != st.session_state.get('selected_batch_id') or
+    st.session_state.logs_last_filters.get("dq_code") != st.session_state.get('selected_dq_code') or
+    st.session_state.logs_last_filters.get("process_name") != st.session_state.get('selected_process_name')
 )
 
 if filters_changed:
     st.session_state.logs_offset = 0
     st.session_state.logs_data_cache = pd.DataFrame()
     st.session_state.logs_initial_load_done = False
-    st.session_state.logs_last_filters["batch_id"] = batch_id
-    st.session_state.logs_last_filters["dq_code"] = dq_code
-    st.session_state.logs_last_filters["process_name"] = process_name
+    st.session_state.logs_last_filters["batch_id"] = st.session_state.get('selected_batch_id')
+    st.session_state.logs_last_filters["dq_code"] = st.session_state.get('selected_dq_code')
+    st.session_state.logs_last_filters["process_name"] = st.session_state.get('selected_process_name')
 
 if "logs_offset" not in st.session_state:
     st.session_state.logs_offset = 0

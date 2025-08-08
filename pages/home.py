@@ -43,15 +43,15 @@ for key, default_value in st.session_state.home_last_filters.items():
 processing_name_options = [v for v in st.session_state.home_last_filters['processing_names'] if v is not None]
 col0, col1 = st.columns([1.5, 1])
 with col0:
-    processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(processing_name_options), key='PROCESSING_NAME')
+    processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(processing_name_options), key='selected_processing_name')
 with col1:
-    processing_date = st.date_input("**Processing Date**", value=None)
+    processing_date = st.date_input("**Processing Date**", value=None, key='selected_processing_date')
 
 filters = []
-if processing_name is not None:
-    filters.append(MtProcessingState.processing_name == processing_name)
-if processing_date is not None:
-    filters.append(MtProcessingState.processing_date == processing_date)
+if st.session_state.get('selected_processing_name') is not None:
+    filters.append(MtProcessingState.processing_name == st.session_state['selected_processing_name'])
+if st.session_state.get('selected_processing_date') is not None:
+    filters.append(MtProcessingState.processing_date == st.session_state['selected_processing_date'])
 
 # Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
 filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or hasattr(f, 'left')]
@@ -60,21 +60,17 @@ filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or h
 if not isinstance(filters, (list, tuple)):
     filters = [filters]
 
-for key in ["processing_name", "processing_date"]:
-    if key not in st.session_state.home_last_filters:
-        st.session_state.home_last_filters[key] = None
-
 filters_changed = (
-    st.session_state.home_last_filters["processing_name"] != processing_name or
-    st.session_state.home_last_filters["processing_date"] != processing_date
+    st.session_state.home_last_filters.get("processing_names") != st.session_state.get('selected_processing_name') or
+    st.session_state.home_last_filters.get("processing_date") != st.session_state.get('selected_processing_date')
 )
 
 if filters_changed:
     st.session_state.home_offset = 0
     st.session_state.home_data_cache = pd.DataFrame()
     st.session_state.home_initial_load_done = False
-    st.session_state.home_last_filters["processing_name"] = processing_name
-    st.session_state.home_last_filters["processing_date"] = processing_date
+    st.session_state.home_last_filters["processing_names"] = st.session_state.get('selected_processing_name')
+    st.session_state.home_last_filters["processing_date"] = st.session_state.get('selected_processing_date')
 
 if "home_offset" not in st.session_state:
     st.session_state.home_offset = 0
