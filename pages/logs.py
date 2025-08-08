@@ -104,14 +104,17 @@ if "logs_total_count" not in st.session_state or filters_changed:
         filters
     )
 
-# Use SQLAlchemy for paginated data
+# Use limit and offset directly in get_paginated_data, and print debug info for troubleshooting
+# Debug: print offset, limit, filters, and result count
+st.write(f"DEBUG: offset={offset}, limit={limit}, filters={filters}")
+
 if not st.session_state.logs_initial_load_done or filters_changed:
     results = get_paginated_data(
         session,
         session.query(EvRkProcDqApex),
         filters,
-        st.session_state.logs_offset,
-        st.session_state.logs_limit,
+        offset,
+        limit,
         order_by=EvRkProcDqApex.processing_date,
         desc=True
     )
@@ -119,8 +122,10 @@ if not st.session_state.logs_initial_load_done or filters_changed:
     if '_sa_instance_state' in new_data.columns:
         new_data = new_data.drop('_sa_instance_state', axis=1)
     st.session_state.logs_data_cache = new_data
-    st.session_state.logs_offset = st.session_state.logs_limit
+    st.session_state.logs_offset = limit
     st.session_state.logs_initial_load_done = True
+
+st.write(f"DEBUG: loaded records={len(st.session_state.logs_data_cache)}")
 
 st.dataframe(st.session_state.logs_data_cache, use_container_width=True)
 
