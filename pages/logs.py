@@ -40,7 +40,8 @@ for key, default_value in st.session_state.logs_last_filters.items():
         if key == 'batch_id':
             st.session_state.logs_last_filters[key] = get_unique_column_values(session, EvRkProcDqApex.t_batch_id)
         if key == 'dq_code':
-            st.session_state.logs_last_filters[key] = get_unique_column_values(session, EvRkProcDqApex.dq_code)
+            values = get_unique_column_values(session, EvRkProcDqApex.dq_code)
+            st.session_state.logs_last_filters[key] = [str(v) for v in values] if values else []
         if key == 'process_name':
             st.session_state.logs_last_filters[key] = get_unique_column_values(session, EvRkProcDqApex.t_process_name)
 
@@ -75,7 +76,7 @@ if not isinstance(filters, (list, tuple)):
 
 filters_changed = (
     st.session_state.logs_last_filters.get("batch_id") != st.session_state.get('selected_batch_id') or
-    st.session_state.logs_last_filters.get("dq_code") != st.session_state.get('selected_dq_code') or
+    str(st.session_state.logs_last_filters.get("dq_code")) != str(st.session_state.get('selected_dq_code')) or
     st.session_state.logs_last_filters.get("process_name") != st.session_state.get('selected_process_name')
 )
 
