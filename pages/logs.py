@@ -43,6 +43,17 @@ for key in ["batch_id", "dq_code", "process_name"]:
     if key not in st.session_state.logs_last_filters:
         st.session_state.logs_last_filters[key] = None
 
+# Fix: On first load, do not apply any filters (show all records)
+if (
+    st.session_state.logs_last_filters["batch_id"] is None and
+    st.session_state.logs_last_filters["dq_code"] is None and
+    st.session_state.logs_last_filters["process_name"] is None and
+    batch_id == "" and dq_code == "" and process_name == ""
+):
+    batch_id = None
+    dq_code = None
+    process_name = None
+
 filters_changed = (
     st.session_state.logs_last_filters["batch_id"] != batch_id or
     st.session_state.logs_last_filters["dq_code"] != dq_code or
