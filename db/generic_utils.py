@@ -18,6 +18,15 @@ def get_paginated_data(session, query, filters, offset, limit, order_by=None, de
     return query.all()
 
 
+def get_total_count_orm(session, query, filters=None):
+    """
+    Returns the total count of rows for a given SQLAlchemy query with optional filters.
+    """
+    if filters:
+        query = query.filter(*filters)
+    return query.count()
+
+
 # Queries for each page
 home_query = lambda session: session.query(
     MtProcessingState.processing_name.label("PROCESSING NAME"),
