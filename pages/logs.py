@@ -49,7 +49,8 @@ col0, col1, col2 = st.columns([1, 0.5, 1.5])
 with col0:
     batch_id = st.selectbox("**Batch ID**", options=[None] + sorted(st.session_state.logs_last_filters['batch_id']), key='BATCH_ID')
 with col1:
-    dq_code = st.selectbox("**DQ Code**", options=[None] + sorted(st.session_state.logs_last_filters['dq_code']), key='DQ_CODE')
+    dq_code_options = [v for v in st.session_state.logs_last_filters['dq_code'] if v is not None]
+    dq_code = st.selectbox("**DQ Code**", options=[None] + sorted(dq_code_options), key='DQ_CODE')
 with col2:
     process_name = st.selectbox("**Process Name**", options=[None] + sorted(st.session_state.logs_last_filters['process_name']), key='PROCESS_NAME')
 

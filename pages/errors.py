@@ -42,7 +42,8 @@ for key, default_value in st.session_state.errors_last_filters.items():
 col0, col1 = st.columns([1.5, 1])
 
 with col0:
-    workflow_name = st.selectbox("**Workflow Name**", options=[None] + sorted(st.session_state.errors_last_filters['workflow_name']), key='WORKFLOW_NAME')
+    workflow_name_options = [v for v in st.session_state.errors_last_filters['workflow_name'] if v is not None]
+    workflow_name = st.selectbox("**Workflow Name**", options=[None] + sorted(workflow_name_options), key='WORKFLOW_NAME')
 with col1:
     processing_date = st.date_input("**Processing/Error Date**", value=None)
 

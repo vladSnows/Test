@@ -42,7 +42,8 @@ for key, default_value in st.session_state.home_last_filters.items():
 col0, col1 = st.columns([1.5, 1])
 
 with col0:
-    processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(st.session_state.home_last_filters['processing_names']), key='PROCESSING_NAME')
+    processing_name_options = [v for v in st.session_state.home_last_filters['processing_names'] if v is not None]
+    processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(processing_name_options), key='PROCESSING_NAME')
 with col1:
     processing_date = st.date_input("**Processing Date**", value=None)
 
