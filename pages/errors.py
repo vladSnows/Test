@@ -3,7 +3,7 @@ import pandas as pd
 from utils import helper as u
 from sqlalchemy.orm import sessionmaker
 from db.models import MtProcessingError
-from db.generic_utils import get_unique_column_values, get_paginated_data, errors_query, get_total_count_orm
+from db.generic_utils import get_unique_column_values, get_paginated_data, get_total_count_orm, errors_query
 from st_aggrid import AgGrid, GridOptionsBuilder
 
 st.title("Błędy przetwarzań")
@@ -29,64 +29,46 @@ if st.session_state.get('isInitialOpen_ERRORS', True):
         'errors_last_filters': {
             'workflow_name': None,
             'processing_date': None
-        },
-        'selected_workflow_name': [],
-        'selected_processing_date': None
+        }
     }
     for key, val in session_defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
-# Initialize or update filter options
-if ('errors_last_filters' not in st.session_state or
-    st.session_state.errors_last_filters.get('workflow_name') is None):
-    st.session_state.errors_last_filters = {
-        'workflow_name': get_unique_column_values(session, MtProcessingError.workflow_name),
-        'processing_date': None
-    }
+for key, default_value in st.session_state.errors_last_filters.items():
+    if key not in st.session_state.errors_last_filters or st.session_state.errors_last_filters[key] is None:
+        if key == 'workflow_name':
+            st.session_state.errors_last_filters[key] = get_unique_column_values(session, MtProcessingError.workflow_name)
 
-# Always use the full set of unique values for selectbox options
-workflow_name_options = [v for v in st.session_state.errors_last_filters['workflow_name'] if v is not None]
+col0, col1, col2, col3 = st.columns([1.5, 1, 3, 3])
 
-col0, col1 = st.columns([1.5, 1])
 with col0:
-    workflow_name = st.multiselect(
-        "**Workflow Name**",
-        options=sorted(workflow_name_options),
-        default=st.session_state.get('selected_workflow_name', []),
-        key='selected_workflow_name'
-    )
+    workflow_name = st.selectbox("**Workflow Name**", options=[None] + sorted(st.session_state.errors_last_filters['workflow_name']), key='WORKFLOW_NAME')
+
 with col1:
-    processing_date = st.date_input(
-        "**Processing/Error Date**",
-        value=st.session_state.get('selected_processing_date'),
-        key='selected_processing_date'
-    )
+    processing_date = st.date_input("**Processing/Error Date**", value=None)
 
 filters = []
-if st.session_state.get('selected_workflow_name'):
-    filters.extend([MtProcessingError.workflow_name == wname for wname in st.session_state['selected_workflow_name']])
-if st.session_state.get('selected_processing_date') is not None:
-    filters.append(MtProcessingError.error_timestamp.cast(pd.Timestamp).date() == st.session_state['selected_processing_date'])
+if workflow_name:
+    filters.append(MtProcessingError.workflow_name == workflow_name)
+if processing_date:
+    filters.append(MtProcessingError.error_timestamp.cast(pd.Timestamp).date() == processing_date)
 
-# Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
-filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or hasattr(f, 'left')]
-
-# Ensure filters is always a list
-if not isinstance(filters, (list, tuple)):
-    filters = [filters]
+for key in ["workflow_name", "processing_date"]:
+    if key not in st.session_state.errors_last_filters:
+        st.session_state.errors_last_filters[key] = None
 
 filters_changed = (
-    st.session_state.errors_last_filters.get("workflow_name") != st.session_state.get('selected_workflow_name') or
-    st.session_state.errors_last_filters.get("processing_date") != st.session_state.get('selected_processing_date')
+    st.session_state.errors_last_filters["workflow_name"] != workflow_name or
+    st.session_state.errors_last_filters["processing_date"] != processing_date
 )
 
 if filters_changed:
     st.session_state.errors_offset = 0
     st.session_state.errors_data_cache = pd.DataFrame()
     st.session_state.errors_initial_load_done = False
-    st.session_state.errors_last_filters["workflow_name"] = st.session_state.get('selected_workflow_name')
-    st.session_state.errors_last_filters["processing_date"] = st.session_state.get('selected_processing_date')
+    st.session_state.errors_last_filters["workflow_name"] = workflow_name
+    st.session_state.errors_last_filters["processing_date"] = processing_date
 
 if "errors_offset" not in st.session_state:
     st.session_state.errors_offset = 0
@@ -97,13 +79,18 @@ if "errors_data_cache" not in st.session_state:
 if "errors_initial_load_done" not in st.session_state:
     st.session_state.errors_initial_load_done = False
 
+params_dict = {
+    "workflow_name": workflow_name if workflow_name else None,
+    "processing_date": processing_date if processing_date else None
+}
+
 offset = st.session_state.errors_offset
 limit = st.session_state.errors_limit
 
 if "errors_total_count" not in st.session_state or filters_changed:
     st.session_state.errors_total_count = get_total_count_orm(
         session,
-        session.query(MtProcessingError),
+        errors_query(session),
         filters
     )
 
@@ -122,7 +109,6 @@ if not st.session_state.errors_initial_load_done or filters_changed:
     st.session_state.errors_offset = st.session_state.errors_limit
     st.session_state.errors_initial_load_done = True
 
-# Wyświetlenie danych
 if st.session_state.errors_data_cache is not None and not st.session_state.errors_data_cache.empty and len(st.session_state.errors_data_cache.columns) > 0:
     gb = GridOptionsBuilder.from_dataframe(st.session_state.errors_data_cache)
     gb.configure_default_column(
