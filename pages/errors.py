@@ -28,24 +28,39 @@ if st.session_state.get('isInitialOpen_ERRORS', True):
         'errors_last_filters': {
             'workflow_name': None,
             'processing_date': None
-        }
+        },
+        'selected_workflow_name': [],
+        'selected_processing_date': None
     }
     for key, val in session_defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
-for key, default_value in st.session_state.errors_last_filters.items():
-    if key not in st.session_state.errors_last_filters or st.session_state.errors_last_filters[key] is None:
-        if key == 'workflow_name':
-            st.session_state.errors_last_filters[key] = get_unique_column_values(session, MtProcessingError.workflow_name)
+# Initialize or update filter options
+if ('errors_last_filters' not in st.session_state or
+    st.session_state.errors_last_filters.get('workflow_name') is None):
+    st.session_state.errors_last_filters = {
+        'workflow_name': get_unique_column_values(session, MtProcessingError.workflow_name),
+        'processing_date': None
+    }
 
 # Always use the full set of unique values for selectbox options
 workflow_name_options = [v for v in st.session_state.errors_last_filters['workflow_name'] if v is not None]
+
 col0, col1 = st.columns([1.5, 1])
 with col0:
-    workflow_name = st.multiselect("**Workflow Name**", options=sorted(workflow_name_options), key='selected_workflow_name')
+    workflow_name = st.multiselect(
+        "**Workflow Name**",
+        options=sorted(workflow_name_options),
+        default=st.session_state.get('selected_workflow_name', []),
+        key='selected_workflow_name'
+    )
 with col1:
-    processing_date = st.date_input("**Processing/Error Date**", value=None, key='selected_processing_date')
+    processing_date = st.date_input(
+        "**Processing/Error Date**",
+        value=st.session_state.get('selected_processing_date'),
+        key='selected_processing_date'
+    )
 
 filters = []
 if st.session_state.get('selected_workflow_name'):
