@@ -53,6 +53,13 @@ if workflow_name:
 if processing_date:
     filters.append(MtProcessingError.error_timestamp.cast(pd.Timestamp).date() == processing_date)
 
+# Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
+filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or hasattr(f, 'left')]
+
+# Ensure filters is always a list
+if not isinstance(filters, (list, tuple)):
+    filters = [filters]
+
 for key in ["workflow_name", "processing_date"]:
     if key not in st.session_state.errors_last_filters:
         st.session_state.errors_last_filters[key] = None
@@ -80,10 +87,6 @@ if "errors_initial_load_done" not in st.session_state:
 
 offset = st.session_state.errors_offset
 limit = st.session_state.errors_limit
-
-# Ensure filters is always a list
-if not isinstance(filters, (list, tuple)):
-    filters = [filters]
 
 if "errors_total_count" not in st.session_state or filters_changed:
     st.session_state.errors_total_count = get_total_count_orm(

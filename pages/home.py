@@ -53,6 +53,9 @@ if processing_name:
 if processing_date:
     filters.append(MtProcessingState.processing_date == processing_date)
 
+# Defensive: Remove any non-SQLAlchemy filter expressions (e.g., int, str)
+filters = [f for f in filters if hasattr(f, 'compare') or hasattr(f, 'key') or hasattr(f, 'left')]
+
 # Ensure filters is always a list
 if not isinstance(filters, (list, tuple)):
     filters = [filters]
