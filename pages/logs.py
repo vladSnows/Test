@@ -53,12 +53,14 @@ if (
     batch_id = None
     dq_code = None
     process_name = None
-
-filters_changed = (
-    st.session_state.logs_last_filters["batch_id"] != batch_id or
-    st.session_state.logs_last_filters["dq_code"] != dq_code or
-    st.session_state.logs_last_filters["process_name"] != process_name
-)
+    # Also reset filters_changed to True to force full reload
+    filters_changed = True
+else:
+    filters_changed = (
+        st.session_state.logs_last_filters["batch_id"] != batch_id or
+        st.session_state.logs_last_filters["dq_code"] != dq_code or
+        st.session_state.logs_last_filters["process_name"] != process_name
+    )
 
 if filters_changed:
     st.session_state.logs_offset = 0
