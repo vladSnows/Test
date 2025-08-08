@@ -43,13 +43,13 @@ for key, default_value in st.session_state.errors_last_filters.items():
 workflow_name_options = [v for v in st.session_state.errors_last_filters['workflow_name'] if v is not None]
 col0, col1 = st.columns([1.5, 1])
 with col0:
-    workflow_name = st.selectbox("**Workflow Name**", options=[None] + sorted(workflow_name_options), key='selected_workflow_name')
+    workflow_name = st.multiselect("**Workflow Name**", options=sorted(workflow_name_options), key='selected_workflow_name')
 with col1:
     processing_date = st.date_input("**Processing/Error Date**", value=None, key='selected_processing_date')
 
 filters = []
-if st.session_state.get('selected_workflow_name') is not None:
-    filters.append(MtProcessingError.workflow_name == st.session_state['selected_workflow_name'])
+if st.session_state.get('selected_workflow_name'):
+    filters.extend([MtProcessingError.workflow_name == wname for wname in st.session_state['selected_workflow_name']])
 if st.session_state.get('selected_processing_date') is not None:
     filters.append(MtProcessingError.error_timestamp.cast(pd.Timestamp).date() == st.session_state['selected_processing_date'])
 

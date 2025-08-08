@@ -41,15 +41,16 @@ for key, default_value in st.session_state.home_last_filters.items():
 
 # Always use the full set of unique values for selectbox options
 processing_name_options = [v for v in st.session_state.home_last_filters['processing_names'] if v is not None]
+
 col0, col1 = st.columns([1.5, 1])
 with col0:
-    processing_name = st.selectbox("**Processing Name**", options=[None] + sorted(processing_name_options), key='selected_processing_name')
+    processing_name = st.multiselect("**Processing Name**", options=sorted(processing_name_options), key='selected_processing_name')
 with col1:
     processing_date = st.date_input("**Processing Date**", value=None, key='selected_processing_date')
 
 filters = []
-if st.session_state.get('selected_processing_name') is not None:
-    filters.append(MtProcessingState.processing_name == st.session_state['selected_processing_name'])
+if st.session_state.get('selected_processing_name'):
+    filters.extend([MtProcessingState.processing_name == pname for pname in st.session_state['selected_processing_name']])
 if st.session_state.get('selected_processing_date') is not None:
     filters.append(MtProcessingState.processing_date == st.session_state['selected_processing_date'])
 
