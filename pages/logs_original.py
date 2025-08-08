@@ -1,0 +1,199 @@
+import streamlit as st
+import pandas as pd
+from OraConnector import *
+
+st.title("LOGi Data Quality")
+
+st.markdown('''
+<style>
+    .block-container > div:first-child {
+        margin-top: 0rem !important;
+        padding-top: 0rem !important;
+    }
+</style>
+''', unsafe_allow_html=True)
+
+
+# Initialize connection
+if "connector" not in st.session_state:
+    st.session_state.connector = None
+if "connected" not in st.session_state:
+    st.session_state.connected = False
+
+# Get DB connection
+connection_DMSF = get_dmsf_cml_connection()
+
+# Query template
+query = """
+SELECT *
+FROM (
+SELECT
+T_BATCH_ID AS "Batch ID",
+T_PROCESS_NAME AS "Process Name",
+T_PROCESS_EXEC_ID AS "Process Exec ID",
+DQ_CODE AS "DQ Code",
+DQ_MSG AS "DQ Msg",
+DQ_ADD_MSG AS "DQ Add Msg",
+DQ_MSG_OBJECT AS "DQ Msg Object",
+DQ_MSG_OBJECT_VALUE AS "DQ Msg Object Value",
+REC_ID AS "Rec ID",
+REC_COL01 AS "Rec Col01",
+REC_COL02 AS "Rec Col02",
+REC_COL03 AS "Rec Col03",
+PROCESSING_DATE AS "Processing Date",
+PROCESSING_NAME AS "Processing Name",
+PROCESSING_MODE AS "Processing Mode"
+FROM DEV03_DMSF_EXL.EV_RK_PROC_DQ_APEX
+WHERE
+(:batch_id IS NULL OR T_BATCH_ID = :batch_id)
+AND (:dq_code IS NULL OR DQ_CODE = :dq_code)
+AND (:process_name IS NULL OR T_PROCESS_NAME = :process_name)
+ORDER BY PROCESSING_DATE DESC)
+OFFSET {offset} ROWS FETCH NEXT {limit} ROWS ONLY
+"""
+
+# Fetch distinct processing names for dropdown
+@st.cache_data
+def get_batch():
+    name_query = "SELECT DISTINCT T_BATCH_ID FROM DEV03_DMSF_EXL.EV_RK_PROC_DQ_APEX ORDER BY T_BATCH_ID"
+    return pd.read_sql(name_query, connection_DMSF)["T_BATCH_ID"].tolist()
+
+batch_ids = get_batch()
+
+@st.cache_data
+def get_dq_codes():
+    name_query = "SELECT DISTINCT DQ_CODE FROM DEV03_DMSF_EXL.EV_RK_PROC_DQ_APEX ORDER BY DQ_CODE"
+    dq_codes_raw = pd.read_sql(name_query, connection_DMSF)["DQ_CODE"].tolist()
+    return [int(code) for code in dq_codes_raw if pd.notnull(code)]
+
+dq_codes = get_dq_codes()
+
+@st.cache_data
+def get_process_names():
+    name_query = "SELECT DISTINCT T_PROCESS_NAME FROM DEV03_DMSF_EXL.EV_RK_PROC_DQ_APEX ORDER BY T_PROCESS_NAME"
+    return pd.read_sql(name_query, connection_DMSF)["T_PROCESS_NAME"].tolist()
+
+process_names = get_process_names()
+
+# Active filters
+col0, col1, col2, col3 = st.columns([1, 0.5, 1.5, 3])
+
+with col0:
+    batch_id = st.selectbox("**Batch ID**", [""] + batch_ids)
+with col1:
+    dq_code = st.selectbox("**DQ Code**", [""] + dq_codes)
+with col2:
+    process_name = st.selectbox("**Process Name**", [""] + process_names)
+
+# Reset danych jeśli zmieniono filtr
+
+if "logs_last_filters" not in st.session_state or not isinstance(st.session_state.logs_last_filters, dict):
+    st.session_state.logs_last_filters = {}
+
+# Upewnij się, że wszystkie klucze istnieją
+for key in ["batch_id", "dq_code", "process_name"]:
+    if key not in st.session_state.logs_last_filters:
+        st.session_state.logs_last_filters[key] = None
+
+
+filters_changed = (
+    st.session_state.logs_last_filters["batch_id"] != batch_id or
+    st.session_state.logs_last_filters["dq_code"] != dq_code or
+    st.session_state.logs_last_filters["process_name"] != process_name
+)
+
+if filters_changed:
+    st.session_state.logs_offset = 0
+    st.session_state.logs_data_cache = pd.DataFrame()
+    st.session_state.logs_initial_load_done = False
+    st.session_state.logs_last_filters["batch_id"] = batch_id
+    st.session_state.logs_last_filters["dq_code"] = dq_code
+    st.session_state.logs_last_filters["process_name"] = process_name
+
+# Stan sesji
+if "logs_offset" not in st.session_state:
+    st.session_state.logs_offset = 0
+if "logs_limit" not in st.session_state:
+    st.session_state.logs_limit = 20
+if "logs_data_cache" not in st.session_state:
+    st.session_state.logs_data_cache = pd.DataFrame()
+if "logs_initial_load_done" not in st.session_state:
+    st.session_state.logs_initial_load_done = False
+
+
+params_dict = {
+    "batch_id": batch_id if batch_id else None,
+    "dq_code": dq_code if dq_code else None,
+    "process_name": process_name if process_name else None
+}
+
+
+offset = st.session_state.logs_offset
+limit = st.session_state.logs_limit
+
+paginated_query = query.replace(":offset", str(offset)).replace(":limit", str(limit))
+
+# Execute query and show table
+
+@st.cache_data
+def get_total_count(_connection, params):
+    count_query = """
+    SELECT COUNT(*) FROM DEV03_DMSF_EXL.EV_RK_PROC_DQ_APEX
+    WHERE (:batch_id IS NULL OR T_BATCH_ID = :batch_id)
+    AND (:dq_code IS NULL OR DQ_CODE = :dq_code)
+    AND (:process_name IS NULL OR T_PROCESS_NAME = :process_name)
+    """
+    with _connection.cursor() as cursor:
+        cursor.execute(count_query, params)
+        return cursor.fetchone()[0]
+
+if "logs_total_count" not in st.session_state or filters_changed:
+    st.session_state.logs_total_count = get_total_count(connection_DMSF, params_dict)
+
+@st.cache_data
+def execute_dynamic_query(_connection, query, params):
+    with _connection.cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        return pd.DataFrame(rows, columns=columns)
+
+# Automatyczne pierwsze ładowanie
+if not st.session_state.logs_initial_load_done or filters_changed:
+    paginated_query = query.format(
+        offset=st.session_state.logs_offset,
+        limit=st.session_state.logs_limit
+    )
+    new_data = execute_dynamic_query(connection_DMSF, paginated_query, params_dict)
+    st.session_state.logs_data_cache = new_data
+    st.session_state.logs_offset = st.session_state.logs_limit
+    st.session_state.logs_initial_load_done = True
+
+# Wyświetlenie danych
+st.dataframe(st.session_state.logs_data_cache, use_container_width=True)
+
+st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
+
+# Przycisk ładowania
+if len(st.session_state.logs_data_cache) < st.session_state.logs_total_count:
+    if st.button("Pokaż więcej"):
+        paginated_query = query.format(
+            offset=st.session_state.logs_offset,
+            limit=st.session_state.logs_limit
+        )
+        new_data = execute_dynamic_query(connection_DMSF, paginated_query, params_dict)
+        st.session_state.logs_data_cache = pd.concat([st.session_state.logs_data_cache, new_data], ignore_index=True)
+        st.session_state.logs_offset += st.session_state.logs_limit
+        st.rerun()
+else:
+    st.info("All records loaded.")
+st.markdown(
+    """
+    <style>
+    .stDataFrame > div {
+        height: 55vh !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)

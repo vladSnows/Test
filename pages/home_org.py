@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from utils import helper as u
 from sqlalchemy.orm import sessionmaker
-from db.generic_utils import get_unique_column_values, get_paginated_data, get_total_count_orm, home_query
+from db.MT_PROCESSING_STATE import MtProcessingState as MtProcessingState
 
 st.title("Przetwarzania DMSF")
 
@@ -16,6 +16,38 @@ if "connected" not in st.session_state:
 engine = u.getEngine()
 Session = sessionmaker(bind=engine)
 session = Session()
+
+
+def get_paginated_data(session, filters, offset, limit):
+    query = session.query(
+        MtProcessingState.processing_name.label("PROCESSING NAME"),
+        MtProcessingState.batch_id.label("BATCH ID"),
+        MtProcessingState.processing_date.label("PROCESSING DATE"),
+        MtProcessingState.processing_state.label("PROCESSING STATE"),
+        MtProcessingState.prc_period_flag.label("PRC PERIOD FLAG"),
+        MtProcessingState.processing_mode.label("PROCESSING MODE"),
+        MtProcessingState.scheduling_date.label("SCHEDULING_DATE")
+    )
+
+    if filters:
+        query = query.filter(*filters)
+
+    query = query.order_by(MtProcessingState.processing_date.desc())
+    query = query.offset(offset).limit(limit)
+
+    return query.all()
+
+def getUniqueColumnValues(column_attr):
+    engine = u.getEngine()
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        values = session.query(column_attr).distinct().all()
+        unique_values = [value[0] for value in values if value[0] is not None]
+        return unique_values
+    finally:
+        session.close()
+
 
 if 'isInitialOpen_HOME'  not in st.session_state:
     st.session_state['isInitialOpen_HOME'] = True
@@ -37,7 +69,8 @@ if st.session_state.get('isInitialOpen_HOME', True):
 for key, default_value in st.session_state.home_last_filters.items():
     if key not in st.session_state.home_last_filters or st.session_state.home_last_filters[key] is None:
         if key == 'processing_names':
-            st.session_state.home_last_filters[key] = get_unique_column_values(session, home_query(session)._entities[0].column)
+            st.session_state.home_last_filters[key] = getUniqueColumnValues(MtProcessingState.processing_name)
+
 
 # Active filters
 col0, col1, col2, col3 = st.columns([1.5, 1, 3, 3])
@@ -48,19 +81,20 @@ with col0:
 with col1:
     processing_date = st.date_input("**Processing Date**", value=None)
 
+
 filters = []
 if processing_name:
-    from db.models import MtProcessingState
     filters.append(MtProcessingState.processing_name == processing_name)
 if processing_date:
-    from db.models import MtProcessingState
     filters.append(MtProcessingState.processing_date == processing_date)
+
 
 # Reset danych jeśli zmieniono filtr
 # Upewnij się, że wszystkie klucze istnieją
 for key in ["processing_name", "processing_date"]:
     if key not in st.session_state.home_last_filters:
         st.session_state.home_last_filters[key] = None
+
 
 filters_changed = (
     st.session_state.home_last_filters["processing_name"] != processing_name or
@@ -84,6 +118,7 @@ if "home_data_cache" not in st.session_state:
 if "home_initial_load_done" not in st.session_state:
     st.session_state.home_initial_load_done = False
 
+
 params_dict = {
     "processing_name": processing_name if processing_name else None,
     "processing_date": processing_date if processing_date else None
@@ -92,53 +127,69 @@ params_dict = {
 offset = st.session_state.home_offset
 limit = st.session_state.home_limit
 
+@st.cache_data
+def get_total_count_orm(processing_name, processing_date):
+    engine = u.getEngine()
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        count_query = session.query(MtProcessingState)
+        if processing_name:
+            count_query = count_query.filter(MtProcessingState.processing_name == processing_name)
+        if processing_date:
+            count_query = count_query.filter(MtProcessingState.processing_date == processing_date)
+        return count_query.count()
+    finally:
+        session.close()
+
 # Wywołanie
 if "home_total_count" not in st.session_state or filters_changed:
     st.session_state.home_total_count = get_total_count_orm(
-        session,
-        home_query(session),
-        filters
+        processing_name=params_dict["processing_name"],
+        processing_date=params_dict["processing_date"]
     )
+
+
+# Execute query and show table
+@st.cache_data
+def execute_dynamic_query(_connection, query, params):
+    with _connection.cursor() as cursor:
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
+        return pd.DataFrame(rows, columns=columns)
 
 # Automatyczne pierwsze ładowanie
 if not st.session_state.home_initial_load_done or filters_changed:
-    results = get_paginated_data(
-        session,
-        home_query(session),
-        filters,
-        offset,
-        limit,
-        order_by=None,
-        desc=True
-    )
+    results = get_paginated_data(session, filters, offset, limit)
     new_data = pd.DataFrame([r._asdict() for r in results])
+
     st.session_state.home_data_cache = new_data
     st.session_state.home_offset = st.session_state.home_limit
     st.session_state.home_initial_load_done = True
 
+
 # Wyświetlenie danych
 st.dataframe(st.session_state.home_data_cache, use_container_width=True)
+
 
 st.markdown(f"**Showing {len(st.session_state.home_data_cache)} of {st.session_state.home_total_count} records**")
 
 # Przycisk ładowania
+
 if len(st.session_state.home_data_cache) < st.session_state.home_total_count:
     if st.button("Pokaż więcej"):
-        results = get_paginated_data(
-            session,
-            home_query(session),
-            filters,
-            offset,
-            limit,
-            order_by=None,
-            desc=True
-        )
+        results = get_paginated_data(session, filters, offset, limit)
         new_data = pd.DataFrame([r._asdict() for r in results])
         st.session_state.home_data_cache = pd.concat([st.session_state.home_data_cache, new_data], ignore_index=True)
         st.session_state.home_offset += st.session_state.home_limit
         st.rerun()
 else:
     st.info("All records loaded.")
+
+
+
+
 
 st.markdown(
     """
