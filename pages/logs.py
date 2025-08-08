@@ -20,7 +20,7 @@ Session = sessionmaker(bind=engine)
 session = Session()
 connection_DMSF = engine.raw_connection()
 
-# Fetch distinct values for dropdowns using SQLAlchemy utilities
+# Remove st.cache_data from get_unique_column_values usage for dropdowns
 batch_ids = get_unique_column_values(session, EvRkProcDqApex.t_batch_id)
 dq_codes = get_unique_column_values(session, EvRkProcDqApex.dq_code)
 process_names = get_unique_column_values(session, EvRkProcDqApex.t_process_name)
@@ -90,11 +90,12 @@ limit = st.session_state.logs_limit
 
 # Replace raw SQL count with SQLAlchemy ORM count
 filters = []
-if batch_id:
+# Only add filters if the value is not None and not an empty string
+if batch_id not in (None, ""):
     filters.append(EvRkProcDqApex.t_batch_id == batch_id)
-if dq_code:
+if dq_code not in (None, ""):
     filters.append(EvRkProcDqApex.dq_code == str(dq_code))
-if process_name:
+if process_name not in (None, ""):
     filters.append(EvRkProcDqApex.t_process_name == process_name)
 
 if "logs_total_count" not in st.session_state or filters_changed:
