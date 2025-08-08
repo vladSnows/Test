@@ -51,11 +51,7 @@ if (
     st.session_state.logs_last_filters["process_name"] is None and
     batch_id == "" and dq_code == "" and process_name == ""
 ):
-    batch_id = None
-    dq_code = None
-    process_name = None
-    # Also reset filters_changed to True to force full reload
-    filters_changed = True
+    filters_changed = False
 else:
     filters_changed = (
         st.session_state.logs_last_filters["batch_id"] != batch_id or
@@ -71,16 +67,15 @@ if filters_changed:
     st.session_state.logs_last_filters["dq_code"] = dq_code
     st.session_state.logs_last_filters["process_name"] = process_name
 
-# Always reset offset to 0 on first load or filter change
-if filters_changed or "logs_offset" not in st.session_state:
+# Session state defaults
+if "logs_offset" not in st.session_state:
     st.session_state.logs_offset = 0
-
-# Make sure limit is always a positive integer
-if "logs_limit" not in st.session_state or not isinstance(st.session_state.logs_limit, int) or st.session_state.logs_limit <= 0:
+if "logs_limit" not in st.session_state:
     st.session_state.logs_limit = 20
-
-offset = st.session_state.logs_offset
-limit = st.session_state.logs_limit
+if "logs_data_cache" not in st.session_state:
+    st.session_state.logs_data_cache = pd.DataFrame()
+if "logs_initial_load_done" not in st.session_state:
+    st.session_state.logs_initial_load_done = False
 
 params_dict = {
     "batch_id": batch_id if batch_id else None,
@@ -88,9 +83,11 @@ params_dict = {
     "process_name": process_name if process_name else None
 }
 
-# Replace raw SQL count with SQLAlchemy ORM count
+offset = st.session_state.logs_offset
+limit = st.session_state.logs_limit
+
+# Build filters for ORM
 filters = []
-# Only add filters if the value is not None and not an empty string
 if batch_id not in (None, ""):
     filters.append(EvRkProcDqApex.t_batch_id == batch_id)
 if dq_code not in (None, ""):
@@ -98,61 +95,57 @@ if dq_code not in (None, ""):
 if process_name not in (None, ""):
     filters.append(EvRkProcDqApex.t_process_name == process_name)
 
+from db.generic_utils import logs_query
+
+# Get total count
 if "logs_total_count" not in st.session_state or filters_changed:
     st.session_state.logs_total_count = get_total_count_orm(
         session,
-        session.query(EvRkProcDqApex),
+        logs_query(session),
         filters
     )
 
-# Use limit and offset directly in get_paginated_data, and print debug info for troubleshooting
-# Debug: print offset, limit, filters, and result count
-st.write(f"DEBUG: offset={offset}, limit={limit}, filters={filters}")
-
+# Load data (pagination)
 if not st.session_state.logs_initial_load_done or filters_changed:
-    results = get_paginated_data(
+    data = get_paginated_data(
         session,
-        session.query(EvRkProcDqApex),
+        logs_query(session),
         filters,
         offset,
         limit,
         order_by=EvRkProcDqApex.processing_date,
         desc=True
     )
-    new_data = pd.DataFrame([r.__dict__ for r in results])
-    if '_sa_instance_state' in new_data.columns:
-        new_data = new_data.drop('_sa_instance_state', axis=1)
-    st.session_state.logs_data_cache = new_data
+    df = pd.DataFrame([row._asdict() for row in data])
+    st.session_state.logs_data_cache = df
     st.session_state.logs_offset = limit
     st.session_state.logs_initial_load_done = True
-    if len(results) > 0:
-        st.write(f"DEBUG: first record: {results[0]}")
 
-st.write(f"DEBUG: loaded records={len(st.session_state.logs_data_cache)}")
-
+# Show data
 st.dataframe(st.session_state.logs_data_cache, use_container_width=True)
-
 st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
 
+# Load more button
 if len(st.session_state.logs_data_cache) < st.session_state.logs_total_count:
     if st.button("Pokaż więcej"):
-        results = get_paginated_data(
+        data = get_paginated_data(
             session,
-            session.query(EvRkProcDqApex),
+            logs_query(session),
             filters,
             st.session_state.logs_offset,
-            st.session_state.logs_limit,
+            limit,
             order_by=EvRkProcDqApex.processing_date,
             desc=True
         )
-        new_data = pd.DataFrame([r.__dict__ for r in results])
-        if '_sa_instance_state' in new_data.columns:
-            new_data = new_data.drop('_sa_instance_state', axis=1)
-        st.session_state.logs_data_cache = pd.concat([st.session_state.logs_data_cache, new_data], ignore_index=True)
-        st.session_state.logs_offset += st.session_state.logs_limit
+        df = pd.DataFrame([row._asdict() for row in data])
+        st.session_state.logs_data_cache = pd.concat([
+            st.session_state.logs_data_cache, df
+        ], ignore_index=True)
+        st.session_state.logs_offset += limit
         st.rerun()
 else:
     st.info("All records loaded.")
+
 st.markdown(
     """
     <style>
