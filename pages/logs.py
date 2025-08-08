@@ -70,23 +70,22 @@ if filters_changed:
     st.session_state.logs_last_filters["dq_code"] = dq_code
     st.session_state.logs_last_filters["process_name"] = process_name
 
-if "logs_offset" not in st.session_state:
+# Always reset offset to 0 on first load or filter change
+if filters_changed or "logs_offset" not in st.session_state:
     st.session_state.logs_offset = 0
-if "logs_limit" not in st.session_state:
+
+# Make sure limit is always a positive integer
+if "logs_limit" not in st.session_state or not isinstance(st.session_state.logs_limit, int) or st.session_state.logs_limit <= 0:
     st.session_state.logs_limit = 20
-if "logs_data_cache" not in st.session_state:
-    st.session_state.logs_data_cache = pd.DataFrame()
-if "logs_initial_load_done" not in st.session_state:
-    st.session_state.logs_initial_load_done = False
+
+offset = st.session_state.logs_offset
+limit = st.session_state.logs_limit
 
 params_dict = {
     "batch_id": batch_id if batch_id else None,
     "dq_code": dq_code if dq_code else None,
     "process_name": process_name if process_name else None
 }
-
-offset = st.session_state.logs_offset
-limit = st.session_state.logs_limit
 
 # Replace raw SQL count with SQLAlchemy ORM count
 filters = []
