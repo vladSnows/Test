@@ -94,7 +94,7 @@ limit = st.session_state.logs_limit
 if "logs_total_count" not in st.session_state or filters_changed:
     st.session_state.logs_total_count = get_total_count_orm(
         session,
-        EvRkProcDqApex,
+        session.query(EvRkProcDqApex),
         filters
     )
 

@@ -83,7 +83,7 @@ limit = st.session_state.errors_limit
 if "errors_total_count" not in st.session_state or filters_changed:
     st.session_state.errors_total_count = get_total_count_orm(
         session,
-        MtProcessingError,
+        session.query(MtProcessingError),
         filters
     )
 
