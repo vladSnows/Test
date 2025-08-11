@@ -2,6 +2,21 @@
 
 This project is a Streamlit-based data dashboard for Oracle databases, featuring interactive tables with filtering, pagination, and column auto-fit using AgGrid.
 
+## Project Structure
+
+- **app.py**: Main entry point for the Streamlit application.
+- **pagin.py**: Standalone Streamlit page for debugging and testing pagination and table features.
+- **pages/**: Contains additional Streamlit pages:
+  - `home.py`, `errors.py`, `logs.py`: Main dashboard pages for different data views.
+  - `home_org.py`, `errors_org.py`, `logs_original.py`: Alternative or legacy versions of the main pages.
+- **db/**: Database logic and models.
+  - `models.py`: SQLAlchemy ORM models.
+  - `generic_utils.py`: Database utility functions (queries, pagination, etc).
+- **utils/**: Helper utilities for authentication and other shared logic.
+- **images/**: Contains logo and image assets for the UI.
+- **requirements.txt**: Python dependencies for the project.
+- **README.md**: Project documentation and setup instructions.
+
 ## Features
 - Streamlit UI for data exploration
 - Oracle database connection (via oracledb and SQLAlchemy)
@@ -36,4 +51,3 @@ See `requirements.txt` for all dependencies. Main libraries:
 ## Notes
 - Make sure you have network access to your Oracle database.
 - For best experience, use a modern browser and a wide layout.
-
