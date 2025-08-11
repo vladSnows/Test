@@ -1,0 +1,6 @@
+streamlit>=1.33.0
+pandas>=2.2.2
+sqlalchemy>=2.0.30
+st-aggrid>=0.3.4
+oracledb>=2.2.0
+
