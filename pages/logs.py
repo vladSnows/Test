@@ -164,7 +164,27 @@ if st.session_state.logs_data_cache is not None and not st.session_state.logs_da
     )
     gb.configure_side_bar()
     grid_options = gb.build()
-    AgGrid(st.session_state.logs_data_cache, gridOptions=grid_options, enable_enterprise_modules=True, theme="streamlit", update_mode="NO_UPDATE", pagination=True, height=400)
+    # Detect Streamlit theme
+    theme = "streamlit"
+    if hasattr(st, 'get_theme'):
+        theme_settings = st.get_theme()
+        if theme_settings and theme_settings.get('base') == 'dark':
+            theme = "alpine-dark"
+        else:
+            theme = "streamlit"
+    elif st.runtime.scriptrunner.get_script_run_ctx().session_info.session.custom_theme:
+        # Fallback for older Streamlit versions
+        if st.runtime.scriptrunner.get_script_run_ctx().session_info.session.custom_theme['base'] == 'dark':
+            theme = "alpine-dark"
+    AgGrid(
+        st.session_state.logs_data_cache,
+        gridOptions=grid_options,
+        enable_enterprise_modules=True,
+        theme=theme,
+        update_mode="NO_UPDATE",
+        pagination=True,
+        height=400
+    )
     st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
 else:
     st.info("No data to display for the selected filters.")
@@ -188,7 +208,7 @@ if len(st.session_state.logs_data_cache) < st.session_state.logs_total_count:
         st.session_state.logs_offset += limit
         st.rerun()
 else:
-    st.info("All records loaded.")
+    st.toast("All records loaded.")
 
 st.markdown(
     """
