@@ -190,7 +190,8 @@ if st.session_state.logs_data_cache is not None and not st.session_state.logs_da
         theme=theme,
         update_mode="NO_UPDATE",
         pagination=False,
-        autoSizeColumns=True,  # Fit columns to table size
+        fit_columns_on_grid_load=True,  # Auto-fit columns to grid width
+        autoSizeColumns=True,
     )
     st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
 else:
