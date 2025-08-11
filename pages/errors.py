@@ -152,10 +152,6 @@ if st.session_state.errors_data_cache is not None and not st.session_state.error
             theme = "alpine-dark"
         else:
             theme = "streamlit"
-    elif st.runtime.scriptrunner.get_script_run_ctx().session_info.session.custom_theme:
-        # Fallback for older Streamlit versions
-        if st.runtime.scriptrunner.get_script_run_ctx().session_info.session.custom_theme['base'] == 'dark':
-            theme = "alpine-dark"
     AgGrid(
         st.session_state.errors_data_cache,
         gridOptions=grid_options,
