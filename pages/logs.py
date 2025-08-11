@@ -143,9 +143,13 @@ if st.session_state.logs_data_cache is not None and not st.session_state.logs_da
         enableValue=True,
         headerCheckboxSelection=True,
     )
+    # Format date columns to YYYY-MM-DD
+    date_columns = [col for col in st.session_state.logs_data_cache.columns if 'date' in col.lower() or 'timestamp' in col.lower()]
+    for col in date_columns:
+        gb.configure_column(col, valueFormatter="(d ? d.substring(0, 10) : '')")
+    gb.configure_default_column(resizable=True, flex=1)
     gb.configure_grid_options(
-        pagination=True,
-        paginationAutoPageSize=False,
+        pagination=False,
         domLayout='normal',
         suppressRowClickSelection=False,
         rowSelection='single',
@@ -155,7 +159,8 @@ if st.session_state.logs_data_cache is not None and not st.session_state.logs_da
         defaultColDef={
             "resizable": True,
             "sortable": True,
-            "filter": True
+            "filter": True,
+            "flex": 1
         },
         groupSelectsChildren=True,
         suppressRowDeselection=False,
@@ -178,8 +183,8 @@ if st.session_state.logs_data_cache is not None and not st.session_state.logs_da
         enable_enterprise_modules=True,
         theme=theme,
         update_mode="NO_UPDATE",
-        pagination=True,
-        height=400
+        pagination=False,
+        autoSizeColumns=True,
     )
     st.markdown(f"**Showing {len(st.session_state.logs_data_cache)} of {st.session_state.logs_total_count} records**")
 else:

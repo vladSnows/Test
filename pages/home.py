@@ -131,10 +131,14 @@ if st.session_state.home_data_cache is not None and not st.session_state.home_da
         enableValue=True,
         headerCheckboxSelection=True,
     )
+    # Format date columns to YYYY-MM-DD
+    date_columns = [col for col in st.session_state.home_data_cache.columns if 'date' in col.lower()]
+    for col in date_columns:
+        gb.configure_column(col, valueFormatter="(d ? d.substring(0, 10) : '')")
+    gb.configure_default_column(resizable=True, flex=1)  # Fit columns to table size
     gb.configure_grid_options(
-        pagination=True,
-        paginationAutoPageSize=False,
-        domLayout='normal',
+        pagination=False,  # Disable pagination
+        domLayout='normal',  # Set domLayout to normal
         suppressRowClickSelection=False,
         rowSelection='single',
         enableRangeSelection=True,
@@ -143,7 +147,8 @@ if st.session_state.home_data_cache is not None and not st.session_state.home_da
         defaultColDef={
             "resizable": True,
             "sortable": True,
-            "filter": True
+            "filter": True,
+            "flex": 1
         },
         groupSelectsChildren=True,
         suppressRowDeselection=False,
@@ -166,7 +171,8 @@ if st.session_state.home_data_cache is not None and not st.session_state.home_da
         enable_enterprise_modules=True,
         theme=theme,
         update_mode="NO_UPDATE",
-        pagination=True
+        pagination=False,  # Disable pagination in AgGrid
+        autoSizeColumns=True,  # Fit columns to table size
     )
     st.markdown(f"**Showing {len(st.session_state.home_data_cache)} of {st.session_state.home_total_count} records**")
 else:
