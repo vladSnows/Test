@@ -109,6 +109,11 @@ if not st.session_state.errors_initial_load_done or filters_changed:
     st.session_state.errors_offset = st.session_state.errors_limit
     st.session_state.errors_initial_load_done = True
 
+# Ensure all date columns are formatted as YYYY-MM-DD strings
+date_columns = [col for col in st.session_state.errors_data_cache.columns if 'date' in col.lower() or 'timestamp' in col.lower()]
+for col in date_columns:
+    st.session_state.errors_data_cache[col] = pd.to_datetime(st.session_state.errors_data_cache[col], errors='coerce').dt.strftime('%Y-%m-%d')
+
 if st.session_state.errors_data_cache is not None and not st.session_state.errors_data_cache.empty and len(st.session_state.errors_data_cache.columns) > 0:
     gb = GridOptionsBuilder.from_dataframe(st.session_state.errors_data_cache)
     gb.configure_default_column(
@@ -116,6 +121,7 @@ if st.session_state.errors_data_cache is not None and not st.session_state.error
         sortable=True,
         groupable=True,
         resizable=True,
+        flex=1,  # Fit columns to table size
         wrapText=True,
         autoHeight=True,
         enableRowGroup=True,
@@ -164,7 +170,7 @@ if st.session_state.errors_data_cache is not None and not st.session_state.error
         theme=theme,
         update_mode="NO_UPDATE",
         pagination=False,
-        autoSizeColumns=True,
+        autoSizeColumns=True,  # Fit columns to table size
     )
     st.markdown(f"**Showing {len(st.session_state.errors_data_cache)} of {st.session_state.errors_total_count} records**")
 else:

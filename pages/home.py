@@ -116,6 +116,11 @@ if not st.session_state.home_initial_load_done or filters_changed:
     st.session_state.home_offset = st.session_state.home_limit
     st.session_state.home_initial_load_done = True
 
+# Ensure all date columns are formatted as YYYY-MM-DD strings
+date_columns = [col for col in st.session_state.home_data_cache.columns if 'date' in col.lower() or 'timestamp' in col.lower()]
+for col in date_columns:
+    st.session_state.home_data_cache[col] = pd.to_datetime(st.session_state.home_data_cache[col], errors='coerce').dt.strftime('%Y-%m-%d')
+
 # Wyświetlenie danych
 if st.session_state.home_data_cache is not None and not st.session_state.home_data_cache.empty and len(st.session_state.home_data_cache.columns) > 0:
     gb = GridOptionsBuilder.from_dataframe(st.session_state.home_data_cache)
@@ -124,6 +129,7 @@ if st.session_state.home_data_cache is not None and not st.session_state.home_da
         sortable=True,
         groupable=True,
         resizable=True,
+        flex=1,  # Fit columns to table size
         wrapText=True,
         autoHeight=True,
         enableRowGroup=True,
